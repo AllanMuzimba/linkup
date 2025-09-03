@@ -10,129 +10,134 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == userId;
     }
     
+    function isAdmin() {
+      return request.auth != null && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'super_admin'];
+    }
     
-    // Users collection
+    // Users collection - Allow users to read their own data and admins to read all
     match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow write: if isOwner(userId);
-      allow create: if isOwner(userId);
+      allow read: if isAuthenticated() && (isOwner(userId) || isAdmin());
+      allow write: if isOwner(userId) || isAdmin();
+      allow create: if isAuthenticated(); // Allow users to create their own document
     }
     
     // Posts collection
     match /posts/{postId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isOwner(request.resource.data.authorId);
-      allow update: if isAuthenticated() && isOwner(resource.data.authorId);
-      allow delete: if isAuthenticated() && isOwner(resource.data.authorId);
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (isOwner(resource.data.authorId) || isAdmin());
+      allow delete: if isAuthenticated() && (isOwner(resource.data.authorId) || isAdmin());
     }
     
     // Comments collection
     match /comments/{commentId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isOwner(request.resource.data.authorId);
-      allow update: if isAuthenticated() && isOwner(resource.data.authorId);
-      allow delete: if isAuthenticated() && isOwner(resource.data.authorId);
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (isOwner(resource.data.authorId) || isAdmin());
+      allow delete: if isAuthenticated() && (isOwner(resource.data.authorId) || isAdmin());
     }
     
     // Stories collection
     match /stories/{storyId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isOwner(request.resource.data.authorId);
-      allow update: if isAuthenticated() && isOwner(resource.data.authorId);
-      allow delete: if isAuthenticated() && isOwner(resource.data.authorId);
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (isOwner(resource.data.authorId) || isAdmin());
+      allow delete: if isAuthenticated() && (isOwner(resource.data.authorId) || isAdmin());
       
       // Story views subcollection
       match /views/{viewId} {
         allow read: if isAuthenticated();
-        allow create: if isAuthenticated() && isOwner(request.resource.data.userId);
+        allow create: if isAuthenticated();
       }
     }
     
     // Chats collection
     match /chats/{chatId} {
-      allow read: if isAuthenticated() && request.auth.uid in resource.data.participantIds;
-      allow create: if isAuthenticated() && request.auth.uid in request.resource.data.participantIds;
-      allow update: if isAuthenticated() && request.auth.uid in resource.data.participantIds;
-      allow delete: if isAuthenticated() && request.auth.uid in resource.data.participantIds;
+      allow read: if isAuthenticated() && (request.auth.uid in resource.data.participantIds || isAdmin());
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (request.auth.uid in resource.data.participantIds || isAdmin());
+      allow delete: if isAuthenticated() && (request.auth.uid in resource.data.participantIds || isAdmin());
     }
     
     // Messages collection
     match /messages/{messageId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isOwner(request.resource.data.senderId);
-      allow update: if isAuthenticated() && isOwner(resource.data.senderId);
-      allow delete: if isAuthenticated() && isOwner(resource.data.senderId);
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (isOwner(resource.data.senderId) || isAdmin());
+      allow delete: if isAuthenticated() && (isOwner(resource.data.senderId) || isAdmin());
       
       // Message reactions subcollection
       match /reactions/{reactionId} {
         allow read: if isAuthenticated();
-        allow create: if isAuthenticated() && isOwner(request.resource.data.userId);
-        allow delete: if isAuthenticated() && isOwner(resource.data.userId);
+        allow create: if isAuthenticated();
+        allow delete: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
       }
     }
     
     // Likes collection
     match /likes/{likeId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isOwner(request.resource.data.userId);
-      allow delete: if isAuthenticated() && isOwner(resource.data.userId);
+      allow create: if isAuthenticated();
+      allow delete: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
     }
     
     // Follows collection
     match /follows/{followId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isOwner(request.resource.data.followerId);
-      allow delete: if isAuthenticated() && isOwner(resource.data.followerId);
+      allow create: if isAuthenticated();
+      allow delete: if isAuthenticated() && (isOwner(resource.data.followerId) || isAdmin());
     }
     
     // Friend requests collection
     match /friendRequests/{requestId} {
-      allow read: if isAuthenticated() && (isOwner(resource.data.fromUserId) || isOwner(resource.data.toUserId));
-      allow create: if isAuthenticated() && isOwner(request.resource.data.fromUserId);
-      allow update: if isAuthenticated() && isOwner(resource.data.toUserId);
-      allow delete: if isAuthenticated() && (isOwner(resource.data.fromUserId) || isOwner(resource.data.toUserId));
+      allow read: if isAuthenticated() && (isOwner(resource.data.fromUserId) || isOwner(resource.data.toUserId) || isAdmin());
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (isOwner(resource.data.toUserId) || isAdmin());
+      allow delete: if isAuthenticated() && (isOwner(resource.data.fromUserId) || isOwner(resource.data.toUserId) || isAdmin());
     }
     
     // Friendships collection
     match /friendships/{friendshipId} {
-      allow read: if isAuthenticated() && (isOwner(resource.data.user1Id) || isOwner(resource.data.user2Id));
-      allow create: if isAuthenticated() && (isOwner(request.resource.data.user1Id) || isOwner(request.resource.data.user2Id));
-      allow update: if isAuthenticated() && (isOwner(resource.data.user1Id) || isOwner(resource.data.user2Id));
-      allow delete: if isAuthenticated() && (isOwner(resource.data.user1Id) || isOwner(resource.data.user2Id));
+      allow read: if isAuthenticated() && (isOwner(resource.data.user1Id) || isOwner(resource.data.user2Id) || isAdmin());
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (isOwner(resource.data.user1Id) || isOwner(resource.data.user2Id) || isAdmin());
+      allow delete: if isAuthenticated() && (isOwner(resource.data.user1Id) || isOwner(resource.data.user2Id) || isAdmin());
     }
     
     // Notifications collection
     match /notifications/{notificationId} {
-      allow read: if isAuthenticated() && isOwner(resource.data.userId);
+      allow read: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
       allow create: if isAuthenticated();
-      allow update: if isAuthenticated() && isOwner(resource.data.userId);
-      allow delete: if isAuthenticated() && isOwner(resource.data.userId);
+      allow update: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
+      allow delete: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
     }
     
-    // Reports collection (simplified access)
+    // Reports collection
     match /reports/{reportId} {
-      allow read: if isAuthenticated();
+      allow read: if isAdmin();
       allow create: if isAuthenticated();
-      allow update: if isAuthenticated();
-      allow delete: if isAuthenticated();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
     }
     
-    // Analytics collection (simplified access)
+    // Analytics collection
     match /analytics/{analyticsId} {
-      allow read: if isAuthenticated();
+      allow read: if isAdmin();
       allow write: if false; // Only Cloud Functions can write
     }
     
-    // System settings (simplified access)
+    // System settings
     match /systemSettings/{settingId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow read: if isAdmin();
+      allow write: if isAdmin();
     }
     
-    // Bulk notifications (simplified access)
+    // Bulk notifications
     match /bulkNotifications/{bulkId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow read: if isAdmin();
+      allow write: if isAdmin();
     }
   }
 }

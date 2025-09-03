@@ -74,11 +74,15 @@ export function SocialShareModal({ isOpen, onClose, post }: SocialShareModalProp
   const [copied, setCopied] = useState(false)
 
   const handleShare = (platform: SocialPlatform) => {
+    // Default invite message
+    const inviteMessage = "Join me on Kubatana - the ultimate social platform! 🌐"
+    const fullMessage = `${customMessage}\n\n${inviteMessage}\n${shareUrl}`
+    
     const shareOptions: ShareOptions = {
       url: shareUrl,
-      title: `${post.author.name}'s Post`,
-      description: customMessage,
-      image: post.images?.[0],
+      title: `${post.author.name}'s Post on Kubatana`,
+      description: fullMessage,
+      image: post.mediaUrls?.[0],
       hashtags: post.tags,
     }
 
@@ -86,19 +90,19 @@ export function SocialShareModal({ isOpen, onClose, post }: SocialShareModalProp
 
     switch (platform.id) {
       case "twitter":
-        finalUrl = `${platform.shareUrl}?text=${encodeURIComponent(customMessage)}&url=${encodeURIComponent(shareUrl)}&hashtags=${post.tags?.join(",") || ""}`
+        finalUrl = `${platform.shareUrl}?text=${encodeURIComponent(fullMessage)}&url=${encodeURIComponent(shareUrl)}&hashtags=${post.tags?.join(",") || ""}`
         break
       case "facebook":
-        finalUrl = `${platform.shareUrl}?u=${encodeURIComponent(shareUrl)}&quote=${encodeURIComponent(customMessage)}`
+        finalUrl = `${platform.shareUrl}?u=${encodeURIComponent(shareUrl)}&quote=${encodeURIComponent(fullMessage)}`
         break
       case "linkedin":
-        finalUrl = `${platform.shareUrl}?url=${encodeURIComponent(shareUrl)}&title=${encodeURIComponent(shareOptions.title)}&summary=${encodeURIComponent(customMessage)}`
+        finalUrl = `${platform.shareUrl}?url=${encodeURIComponent(shareUrl)}&title=${encodeURIComponent(shareOptions.title)}&summary=${encodeURIComponent(fullMessage)}`
         break
       case "whatsapp":
-        finalUrl = `${platform.shareUrl}?text=${encodeURIComponent(`${customMessage} ${shareUrl}`)}`
+        finalUrl = `${platform.shareUrl}?text=${encodeURIComponent(fullMessage)}`
         break
       case "telegram":
-        finalUrl = `${platform.shareUrl}?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(customMessage)}`
+        finalUrl = `${platform.shareUrl}?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(fullMessage)}`
         break
     }
 
@@ -134,9 +138,9 @@ export function SocialShareModal({ isOpen, onClose, post }: SocialShareModalProp
               </Badge>
             </div>
             <p className="text-sm text-muted-foreground line-clamp-3">{post.content}</p>
-            {post.images && post.images.length > 0 && (
+            {post.mediaUrls && post.mediaUrls.length > 0 && post.type === 'image' && (
               <img
-                src={post.images[0] || "/placeholder.svg"}
+                src={post.mediaUrls[0] || "/placeholder.svg"}
                 alt="Post preview"
                 className="w-full h-32 object-cover rounded mt-2"
               />
@@ -152,6 +156,9 @@ export function SocialShareModal({ isOpen, onClose, post }: SocialShareModalProp
               placeholder="Add your own message..."
               className="min-h-[80px]"
             />
+            <p className="text-xs text-muted-foreground mt-1">
+              An invite message will be automatically added when sharing to external platforms.
+            </p>
           </div>
 
           <Separator />

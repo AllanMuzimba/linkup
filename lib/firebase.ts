@@ -2,7 +2,7 @@ import { initializeApp, FirebaseApp } from 'firebase/app'
 import { getAuth, Auth } from 'firebase/auth'
 import { getFirestore, Firestore } from 'firebase/firestore'
 import { getStorage, FirebaseStorage } from 'firebase/storage'
-import { getAnalytics, Analytics } from 'firebase/analytics'
+import { getAnalytics, isSupported, Analytics } from 'firebase/analytics'
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -41,9 +41,17 @@ if (typeof window !== 'undefined' && isFirebaseConfigValid()) {
     db = getFirestore(app)
     storage = getStorage(app)
     
-    // Initialize Analytics only if measurementId exists
+    // Initialize Analytics only if measurementId exists and environment supports it
     if (firebaseConfig.measurementId) {
-      analytics = getAnalytics(app)
+      isSupported().then((supported) => {
+        if (supported) {
+          analytics = getAnalytics(app!)
+        } else {
+          console.warn("Firebase Analytics is not supported in this environment.")
+        }
+      }).catch((error) => {
+        console.warn("Error checking Firebase Analytics support:", error)
+      })
     }
   } catch (error) {
     console.error('Firebase initialization error:', error)

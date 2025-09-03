@@ -8,8 +8,8 @@ export interface Post {
     role: string
   }
   content: string
-  images?: string[]
-  video?: string
+  mediaUrls?: string[]
+  type: 'text' | 'image' | 'video'
   createdAt: Date
   updatedAt: Date
   likesCount: number
@@ -17,6 +17,7 @@ export interface Post {
   sharesCount: number
   isLiked: boolean
   isShared: boolean
+  isSaved: boolean
   visibility: "public" | "friends" | "private"
   tags?: string[]
   location?: string

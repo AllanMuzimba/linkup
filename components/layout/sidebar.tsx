@@ -18,6 +18,7 @@ import {
   Plus,
   User,
   Share,
+  Bookmark,
 } from "lucide-react"
 import { PERMISSIONS } from "@/types/auth"
 import Link from "next/link"
@@ -26,7 +27,8 @@ import { usePathname } from "next/navigation"
 const navigation = [
   { name: "Dashboard", href: "/", icon: Home, permission: null },
   { name: "Profile", href: "/profile", icon: User, permission: null },
-  { name: "Posts & Stories", href: "/posts", icon: Plus, permission: PERMISSIONS.CREATE_POSTS },
+  { name: "Posts & Stories", href: "/posts", icon: Plus, permission: null }, // Removed permission requirement
+  { name: "Saved Posts", href: "/saved", icon: Bookmark, permission: null },
   { name: "Messages", href: "/messages", icon: MessageCircle, permission: PERMISSIONS.CHAT_WITH_USERS },
   { name: "Friends", href: "/friends", icon: Users, permission: PERMISSIONS.MANAGE_FRIENDS },
   { name: "Notifications", href: "/notifications", icon: Bell, permission: PERMISSIONS.SEND_BULK_NOTIFICATIONS },
@@ -55,9 +57,21 @@ export function Sidebar() {
   const pathname = usePathname()
   const [loadingPath, setLoadingPath] = useState<string | null>(null)
 
-  if (!user) return null
+  // Show sidebar even when not authenticated
+  // if (!user) return null
 
-  const visibleNavigation = navigation.filter((item) => !item.permission || hasPermission(item.permission))
+  const visibleNavigation = navigation.filter((item) => {
+    // Always show items with no permission requirement
+    if (!item.permission) return true
+    
+    // For authenticated users, check permissions
+    if (user) {
+      return hasPermission(item.permission)
+    }
+    
+    // For unauthenticated users, hide items that require permissions
+    return false
+  })
 
   const handleNavClick = (href: string) => {
     if (href !== pathname) {
@@ -84,9 +98,17 @@ export function Sidebar() {
         </div>
       </div>
 
-      {/* User Profile */}
+      {/* User Profile - Show login option when not authenticated */}
       <div className="p-4 border-b border-sidebar-border">
-        <UserMenu />
+        {user ? <UserMenu /> : (
+          <div className="text-center">
+            <Link href="/login">
+              <Button variant="outline" size="sm" className="w-full">
+                Login
+              </Button>
+            </Link>
+          </div>
+        )}
       </div>
 
       {/* Navigation */}

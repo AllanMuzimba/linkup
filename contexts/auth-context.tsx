@@ -11,7 +11,8 @@ import {
   FacebookAuthProvider,
   TwitterAuthProvider,
   User as FirebaseUser,
-  updateProfile
+  updateProfile,
+  UserCredential
 } from "firebase/auth"
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore"
 import { auth, db } from "@/lib/firebase"
@@ -133,42 +134,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       try {
-        setIsLoading(true)
-
         if (firebaseUser) {
-        // User is signed in
-        let userData = await getUserData(firebaseUser)
+          // User is signed in
+          let userData = await getUserData(firebaseUser)
 
-        if (!userData) {
-          // Create user document if it doesn't exist
+          if (!userData) {
+            // Create user document if it doesn't exist
+            try {
+              const newUserData = await createUserDocument(firebaseUser)
+              userData = {
+                id: firebaseUser.uid,
+                email: firebaseUser.email!,
+                name: newUserData.name,
+                role: newUserData.role,
+                avatar: newUserData.avatar,
+                phone: newUserData.phone,
+                createdAt: new Date(),
+                lastActive: new Date(),
+                isOnline: true,
+              }
+            } catch (error) {
+              console.error('Error creating user document:', error)
+            }
+          }
+
+          // Update last active
           try {
-            const newUserData = await createUserDocument(firebaseUser)
-            userData = {
-              id: firebaseUser.uid,
-              email: firebaseUser.email!,
-              name: newUserData.name,
-              role: newUserData.role,
-              avatar: newUserData.avatar,
-              phone: newUserData.phone,
-              createdAt: new Date(),
-              lastActive: new Date(),
-              isOnline: true,
+            if (db) {
+              const userRef = doc(db, 'users', firebaseUser.uid)
+              await updateDoc(userRef, {
+                lastActive: serverTimestamp(),
+                isOnline: true
+              })
             }
           } catch (error) {
-            console.error('Error creating user document:', error)
+            console.error('Error updating last active:', error)
           }
-        }
-
-        // Update last active
-        try {
-          const userRef = doc(db, 'users', firebaseUser.uid)
-          await updateDoc(userRef, {
-            lastActive: serverTimestamp(),
-            isOnline: true
-          })
-        } catch (error) {
-          console.error('Error updating last active:', error)
-        }
 
           setUser(userData)
         } else {
@@ -179,6 +180,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.error('Auth state change error:', error)
         setUser(null)
       } finally {
+        // Only set loading to false after all operations are complete
         setIsLoading(false)
       }
     })
@@ -223,7 +225,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       const actionCodeSettings = {
         // URL to redirect back to after email verification
-        url: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3002',
+        url: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
         handleCodeInApp: true,
       }
       
@@ -245,7 +247,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const loginWithGoogle = async () => {
+  const loginWithGoogle = async (): Promise<UserCredential | void> => {
     if (!auth) {
       throw new Error('Firebase not initialized. Please check your configuration.')
     }
@@ -275,7 +277,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       
       // User state will be updated by onAuthStateChanged
-      setIsLoading(false)
       return result
     } catch (error: any) {
       setIsLoading(false)
@@ -283,30 +284,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const loginWithFacebook = async () => {
+  const loginWithFacebook = async (): Promise<UserCredential | void> => {
     if (!auth) {
       throw new Error('Firebase not initialized. Please check your configuration.')
     }
 
     setIsLoading(true)
     try {
-      await signInWithPopup(auth, facebookProvider)
+      const result = await signInWithPopup(auth, facebookProvider)
       // User state will be updated by onAuthStateChanged
+      return result
     } catch (error: any) {
       setIsLoading(false)
       throw new Error(error.message || 'Facebook login failed')
     }
   }
 
-  const loginWithTwitter = async () => {
+  const loginWithTwitter = async (): Promise<UserCredential | void> => {
     if (!auth) {
       throw new Error('Firebase not initialized. Please check your configuration.')
     }
 
     setIsLoading(true)
     try {
-      await signInWithPopup(auth, twitterProvider)
+      const result = await signInWithPopup(auth, twitterProvider)
       // User state will be updated by onAuthStateChanged
+      return result
     } catch (error: any) {
       setIsLoading(false)
       throw new Error(error.message || 'Twitter login failed')

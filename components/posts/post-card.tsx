@@ -1,26 +1,82 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
-import { Heart, MessageCircle, Share, MoreHorizontal, MapPin, Globe, Users, Lock, Send } from "lucide-react"
+import { 
+  Heart, 
+  MessageCircle, 
+  Share, 
+  MoreHorizontal, 
+  MapPin, 
+  Globe, 
+  Users, 
+  Lock, 
+  Send,
+  ThumbsUp,
+  Laugh,
+  Angry,
+  Frown,
+  Meh,
+  HeartCrack
+} from "lucide-react"
 import type { Post } from "@/types/post"
 import { SocialShareModal } from "@/components/sharing/social-share-modal"
+import { toast } from "sonner"
+import { PostService } from "@/lib/realtime-services"
+
+interface Comment {
+  id: string
+  author: {
+    name: string
+    username: string
+    avatar?: string
+  }
+  content: string
+  createdAt: Date
+  likesCount: number
+}
 
 interface PostCardProps {
   post: Post
   onLike: (postId: string) => void
   onShare: (postId: string) => void
   onComment: (postId: string, content: string) => void
+  onSave: (postId: string) => void
 }
 
-export function PostCard({ post, onLike, onShare, onComment }: PostCardProps) {
+// Emoji reaction types
+const reactionEmojis = {
+  like: { icon: ThumbsUp, label: "Like", color: "text-blue-500" },
+  love: { icon: Heart, label: "Love", color: "text-red-500" },
+  laugh: { icon: Laugh, label: "Haha", color: "text-yellow-500" },
+  wow: { icon: Meh, label: "Wow", color: "text-yellow-500" },
+  sad: { icon: Frown, label: "Sad", color: "text-yellow-500" },
+  angry: { icon: Angry, label: "Angry", color: "text-red-500" },
+  care: { icon: HeartCrack, label: "Care", color: "text-orange-500" }
+}
+
+export function PostCard({ post, onLike, onShare, onComment, onSave }: PostCardProps) {
   const [showComments, setShowComments] = useState(false)
   const [newComment, setNewComment] = useState("")
   const [showShareModal, setShowShareModal] = useState(false)
+  const [showReactions, setShowReactions] = useState(false)
+  const [userReaction, setUserReaction] = useState<string | null>(null)
+  const [comments, setComments] = useState<Comment[]>([])
+
+  // Subscribe to comments
+  useEffect(() => {
+    if (showComments) {
+      const unsubscribe = PostService.subscribeToPostComments(post.id, (newComments) => {
+        setComments(newComments)
+      })
+      
+      return unsubscribe
+    }
+  }, [showComments, post.id])
 
   const handleComment = () => {
     if (newComment.trim()) {
@@ -32,6 +88,33 @@ export function PostCard({ post, onLike, onShare, onComment }: PostCardProps) {
   const handleShare = () => {
     setShowShareModal(true)
     onShare(post.id)
+  }
+
+  const handleReaction = (reactionType: string) => {
+    // If user already reacted with this type, remove it (toggle off)
+    if (userReaction === reactionType) {
+      setUserReaction(null)
+      // In a real app, you would call an API to remove the reaction
+    } else {
+      setUserReaction(reactionType)
+      // In a real app, you would call an API to add/update the reaction
+      toast.success(`You reacted with ${reactionEmojis[reactionType as keyof typeof reactionEmojis].label}!`)
+    }
+    setShowReactions(false)
+  }
+
+  const handleLike = () => {
+    // Prevent multiple likes by checking if already liked
+    if (!post.isLiked) {
+      onLike(post.id)
+    } else {
+      toast.info("You've already liked this post")
+    }
+  }
+
+  const handleSave = () => {
+    onSave(post.id)
+    toast.success(post.isSaved ? "Post unsaved" : "Post saved for later!")
   }
 
   const visibilityIcons = {
@@ -50,6 +133,16 @@ export function PostCard({ post, onLike, onShare, onComment }: PostCardProps) {
     if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`
     if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`
     return `${Math.floor(diffInSeconds / 86400)}d ago`
+  }
+
+  const formatCommentTime = (date: Date) => {
+    const now = new Date()
+    const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60))
+
+    if (diffInMinutes < 1) return "Just now"
+    if (diffInMinutes < 60) return `${diffInMinutes}m ago`
+    if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)}h ago`
+    return `${Math.floor(diffInMinutes / 1440)}d ago`
   }
 
   return (
@@ -104,11 +197,12 @@ export function PostCard({ post, onLike, onShare, onComment }: PostCardProps) {
               </div>
             )}
 
-            {post.images && post.images.length > 0 && (
+            {/* Image support */}
+            {post.mediaUrls && post.mediaUrls.length > 0 && post.type === 'image' && (
               <div
-                className={`grid gap-2 ${post.images.length === 1 ? "grid-cols-1" : post.images.length === 2 ? "grid-cols-2" : "grid-cols-2"}`}
+                className={`grid gap-2 ${post.mediaUrls.length === 1 ? "grid-cols-1" : post.mediaUrls.length === 2 ? "grid-cols-2" : "grid-cols-2"}`}
               >
-                {post.images.map((image, index) => (
+                {post.mediaUrls.map((image, index) => (
                   <img
                     key={index}
                     src={image || "/placeholder.svg"}
@@ -119,7 +213,15 @@ export function PostCard({ post, onLike, onShare, onComment }: PostCardProps) {
               </div>
             )}
 
-            {post.video && <video src={post.video} controls className="w-full rounded-lg" poster="/placeholder.svg" />}
+            {/* Video support */}
+            {post.mediaUrls && post.mediaUrls.length > 0 && post.type === 'video' && (
+              <video 
+                src={post.mediaUrls[0]} 
+                controls 
+                className="w-full h-64 rounded-lg" 
+                poster="/placeholder.svg"
+              />
+            )}
           </div>
 
           <div className="flex items-center justify-between pt-4 border-t mt-4">
@@ -131,15 +233,36 @@ export function PostCard({ post, onLike, onShare, onComment }: PostCardProps) {
           </div>
 
           <div className="flex items-center justify-between pt-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onLike(post.id)}
-              className={post.isLiked ? "text-red-500" : ""}
-            >
-              <Heart className={`h-4 w-4 mr-2 ${post.isLiked ? "fill-current" : ""}`} />
-              Like
-            </Button>
+            <div className="relative">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowReactions(!showReactions)}
+                className={post.isLiked ? "text-red-500" : ""}
+              >
+                <Heart className={`h-4 w-4 mr-2 ${post.isLiked ? "fill-current" : ""}`} />
+                Like
+              </Button>
+              
+              {showReactions && (
+                <div className="absolute bottom-full left-0 mb-2 bg-white dark:bg-gray-800 rounded-full shadow-lg p-1 flex space-x-1 z-10">
+                  {Object.entries(reactionEmojis).map(([key, reaction]) => {
+                    const Icon = reaction.icon
+                    return (
+                      <Button
+                        key={key}
+                        variant="ghost"
+                        size="sm"
+                        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700"
+                        onClick={() => handleReaction(key)}
+                      >
+                        <Icon className={`h-5 w-5 ${reaction.color}`} />
+                      </Button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
 
             <Button variant="ghost" size="sm" onClick={() => setShowComments(!showComments)}>
               <MessageCircle className="h-4 w-4 mr-2" />
@@ -149,6 +272,16 @@ export function PostCard({ post, onLike, onShare, onComment }: PostCardProps) {
             <Button variant="ghost" size="sm" onClick={handleShare} className={post.isShared ? "text-green-500" : ""}>
               <Share className="h-4 w-4 mr-2" />
               Share
+            </Button>
+            
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={handleSave}
+              className={post.isSaved ? "text-blue-500" : ""}
+            >
+              <Heart className={`h-4 w-4 mr-2 ${post.isSaved ? "fill-current" : ""}`} />
+              Save
             </Button>
           </div>
 
@@ -173,30 +306,32 @@ export function PostCard({ post, onLike, onShare, onComment }: PostCardProps) {
               </div>
 
               <div className="space-y-3">
-                <div className="flex space-x-3">
-                  <Avatar className="h-8 w-8">
-                    <AvatarImage src="/professional-woman-avatar.png" alt="Sarah" />
-                    <AvatarFallback>S</AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1">
-                    <div className="bg-muted rounded-lg p-3">
-                      <div className="flex items-center space-x-2 mb-1">
-                        <span className="font-medium text-sm">Sarah Wilson</span>
-                        <span className="text-xs text-muted-foreground">2h ago</span>
+                {comments.map((comment) => (
+                  <div key={comment.id} className="flex space-x-3">
+                    <Avatar className="h-8 w-8">
+                      <AvatarImage src={comment.author.avatar || "/placeholder.svg"} alt={comment.author.name} />
+                      <AvatarFallback>{comment.author.name.charAt(0)}</AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1">
+                      <div className="bg-muted rounded-lg p-3">
+                        <div className="flex items-center space-x-2 mb-1">
+                          <span className="font-medium text-sm">{comment.author.name}</span>
+                          <span className="text-xs text-muted-foreground">{formatCommentTime(comment.createdAt)}</span>
+                        </div>
+                        <p className="text-sm">{comment.content}</p>
                       </div>
-                      <p className="text-sm">Great post! Really insightful content.</p>
-                    </div>
-                    <div className="flex items-center space-x-4 mt-2">
-                      <Button variant="ghost" size="sm" className="text-xs h-auto p-0">
-                        <Heart className="h-3 w-3 mr-1" />
-                        Like
-                      </Button>
-                      <Button variant="ghost" size="sm" className="text-xs h-auto p-0">
-                        Reply
-                      </Button>
+                      <div className="flex items-center space-x-4 mt-2">
+                        <Button variant="ghost" size="sm" className="text-xs h-auto p-0">
+                          <Heart className="h-3 w-3 mr-1" />
+                          Like
+                        </Button>
+                        <Button variant="ghost" size="sm" className="text-xs h-auto p-0">
+                          Reply
+                        </Button>
+                      </div>
                     </div>
                   </div>
-                </div>
+                ))}
               </div>
             </div>
           )}

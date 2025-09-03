@@ -400,9 +400,9 @@ export default function AdminDashboard() {
                             <p className="font-medium">{post.author?.name}</p>
                             <p className="text-sm text-muted-foreground mb-2">{post.createdAt?.toLocaleDateString()}</p>
                             <p className="text-sm">{post.content}</p>
-                            {post.images && post.images.length > 0 && (
+                            {post.mediaUrls && post.mediaUrls.length > 0 && (
                               <p className="text-xs text-muted-foreground mt-1">
-                                {post.images.length} image(s) attached
+                                {post.type === 'image' ? `${post.mediaUrls.length} image(s) attached` : 'Video attached'}
                               </p>
                             )}
                           </div>

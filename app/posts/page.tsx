@@ -2,15 +2,16 @@
 
 import { useState, useEffect } from "react"
 import { Sidebar } from "@/components/layout/sidebar"
-import { CreatePost } from "@/components/posts/real-time-create-post"
+import { CreatePost } from "@/components/posts/create-post"
 import { PostsFeed } from "@/components/posts/posts-feed"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Plus, Filter, MapPin, Users, Eye, EyeOff } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
-import { UserService } from "@/lib/realtime-services"
+import { UserService, PostService } from "@/lib/realtime-services"
+import { toast } from "sonner"
 
 export default function PostsPage() {
   const { user } = useAuth()
@@ -53,8 +54,52 @@ export default function PostsPage() {
     initializePage()
   }, [user])
 
-  if (!user) {
-    return <div>Please log in to view posts</div>
+  const handleCreatePost = async (postData: any) => {
+    if (!user) {
+      toast.error("Please log in to create posts")
+      return
+    }
+
+    try {
+      // Determine post type and upload media
+      let mediaUrls: string[] = []
+      let postType: 'text' | 'image' | 'video' = 'text'
+      
+      if (postData.images && postData.images.length > 0) {
+        // Upload images
+        postType = 'image'
+        // In a real app, you would upload the images to storage
+        // For now, we'll just use placeholder URLs
+        mediaUrls = postData.images.map((_: any, index: number) => 
+          `https://picsum.photos/seed/${Date.now()}-${index}/800/600`
+        )
+      } else if (postData.video) {
+        // Upload video
+        postType = 'video'
+        // In a real app, you would upload the video to storage
+        // For now, we'll use a placeholder
+        mediaUrls = [`https://sample-videos.com/zip/10/mp4/Sample-video-10mb.mp4`]
+      }
+
+      // Create the post
+      const postId = await PostService.createPost(
+        user.id,
+        postData.content,
+        postType,
+        mediaUrls
+      )
+
+      if (postId) {
+        toast.success("Post created successfully! 🎉")
+        // Close the dialog
+        setIsCreateDialogOpen(false)
+      } else {
+        toast.error("Failed to create post")
+      }
+    } catch (error) {
+      toast.error("Failed to create post")
+      console.error("Error creating post:", error)
+    }
   }
 
   if (isPageLoading) {
@@ -63,7 +108,10 @@ export default function PostsPage() {
         <Sidebar />
         <main className="flex-1 overflow-auto">
           <div className="container max-w-2xl mx-auto p-6">
-            <LoadingSpinner size="lg" text="Loading posts & stories..." />
+            <div className="flex flex-col items-center justify-center space-y-4">
+              <LoadingSpinner size="lg" />
+              <p className="text-muted-foreground">Loading posts & stories...</p>
+            </div>
           </div>
         </main>
       </div>
@@ -73,11 +121,11 @@ export default function PostsPage() {
   const getFilteredFeedProps = () => {
     switch (feedFilter) {
       case 'friends':
-        return { friendsOnly: true }
+        return user ? { friendsOnly: true, authorId: user.id } : {}
       case 'nearby':
         return { location: userLocation ? { ...userLocation, radius: 50 } : undefined }
       case 'mine':
-        return { authorId: user?.id }
+        return user ? { authorId: user.id } : {}
       case 'none':
         return { showNone: true }
       default:
@@ -123,20 +171,24 @@ export default function PostsPage() {
               )}
               
               {/* Create Post Button */}
-              <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button>
+              {user ? (
+                <>
+                  <CreatePost 
+                    isOpen={isCreateDialogOpen}
+                    onClose={() => setIsCreateDialogOpen(false)}
+                    onCreatePost={handleCreatePost}
+                  />
+                  <Button onClick={() => setIsCreateDialogOpen(true)}>
                     <Plus className="h-4 w-4 mr-2" />
                     Post Story
                   </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-2xl">
-                  <DialogHeader>
-                    <DialogTitle>Create New Post</DialogTitle>
-                  </DialogHeader>
-                  <CreatePost />
-                </DialogContent>
-              </Dialog>
+                </>
+              ) : (
+                <Button onClick={() => toast.error("Please log in to create posts")}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Post Story
+                </Button>
+              )}
             </div>
           </div>
 
@@ -158,7 +210,7 @@ export default function PostsPage() {
                     All Posts
                   </div>
                 </SelectItem>
-                <SelectItem value="friends">
+                <SelectItem value="friends" disabled={!user}>
                   <div className="flex items-center">
                     <Users className="h-4 w-4 mr-2" />
                     Friends Only
@@ -170,7 +222,7 @@ export default function PostsPage() {
                     Nearby Posts
                   </div>
                 </SelectItem>
-                <SelectItem value="mine">
+                <SelectItem value="mine" disabled={!user}>
                   <div className="flex items-center">
                     <Eye className="h-4 w-4 mr-2" />
                     My Posts Only

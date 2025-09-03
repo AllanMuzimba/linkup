@@ -1,11 +1,24 @@
-import { db } from './firebase'
+import { db, auth } from './firebase'
 import { collection, query, where, getDocs, addDoc, serverTimestamp } from 'firebase/firestore'
 import { UserService, NotificationService } from './realtime-services'
+
+// Define types for better type safety
+interface UserData {
+  id: string;
+  name?: string;
+  avatar?: string;
+  birthday?: string;
+  [key: string]: any;
+}
 
 export class BirthdayService {
   // Check for birthdays today and send notifications
   static async checkTodaysBirthdays() {
-    if (!db) return
+    // Ensure Firebase is initialized and user is authenticated
+    if (!db || !auth || !auth.currentUser) {
+      console.log('Skipping birthday check - not authenticated')
+      return
+    }
 
     const today = new Date()
     const todayString = `${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
@@ -15,18 +28,18 @@ export class BirthdayService {
       const usersRef = collection(db, 'users')
       const allUsersSnapshot = await getDocs(usersRef)
       
-      const birthdayUsers: any[] = []
+      const birthdayUsers: UserData[] = []
       
       allUsersSnapshot.forEach((doc) => {
-        const userData = doc.data()
+        const userData = doc.data() as UserData
         if (userData.birthday) {
           const userBirthday = new Date(userData.birthday)
           const userBirthdayString = `${String(userBirthday.getMonth() + 1).padStart(2, '0')}-${String(userBirthday.getDate()).padStart(2, '0')}`
           
           if (userBirthdayString === todayString && userData.birthdayWishes !== false) {
             birthdayUsers.push({
-              id: doc.id,
-              ...userData
+              ...userData,
+              id: doc.id
             })
           }
         }
@@ -45,8 +58,9 @@ export class BirthdayService {
   }
 
   // Send birthday notifications to friends
-  static async sendBirthdayNotifications(birthdayUser: any) {
-    if (!db) return
+  static async sendBirthdayNotifications(birthdayUser: UserData) {
+    // Ensure Firebase is initialized and user is authenticated
+    if (!db || !auth || !auth.currentUser) return
 
     try {
       // Get birthday user's friends
@@ -72,8 +86,8 @@ export class BirthdayService {
         await addDoc(collection(db, 'notifications'), {
           userId: friendId,
           type: 'birthday',
-          title: `🎉 It's ${birthdayUser.name}'s Birthday!`,
-          message: `Wish ${birthdayUser.name} a happy birthday today!`,
+          title: `🎉 It's ${birthdayUser.name || 'User'}'s Birthday!`,
+          message: `Wish ${birthdayUser.name || 'User'} a happy birthday today!`,
           data: {
             birthdayUserId: birthdayUser.id,
             birthdayUserName: birthdayUser.name,
@@ -89,7 +103,7 @@ export class BirthdayService {
         userId: birthdayUser.id,
         type: 'birthday_wish',
         title: '🎂 Happy Birthday!',
-        message: `Happy Birthday ${birthdayUser.name}! Hope you have a wonderful day filled with joy and celebration! 🎉`,
+        message: `Happy Birthday ${birthdayUser.name || 'User'}! Hope you have a wonderful day filled with joy and celebration! 🎉`,
         data: {
           isSystemMessage: true
         },
@@ -105,7 +119,8 @@ export class BirthdayService {
 
   // Get upcoming birthdays (next 7 days)
   static async getUpcomingBirthdays(userId: string) {
-    if (!db) return []
+    // Ensure Firebase is initialized and user is authenticated
+    if (!db || !auth || !auth.currentUser) return []
 
     try {
       // Get user's friends
@@ -127,12 +142,12 @@ export class BirthdayService {
       })
 
       // Get friends' birthdays
-      const upcomingBirthdays: any[] = []
+      const upcomingBirthdays: UserData[] = []
       const today = new Date()
       const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
 
       for (const friendId of friendIds) {
-        const friendData = await UserService.getUserById(friendId)
+        const friendData = await UserService.getUserById(friendId) as UserData | null
         if (friendData?.birthday) {
           const birthday = new Date(friendData.birthday)
           const thisYearBirthday = new Date(today.getFullYear(), birthday.getMonth(), birthday.getDate())
@@ -147,7 +162,11 @@ export class BirthdayService {
         }
       }
 
-      return upcomingBirthdays.sort((a, b) => a.daysUntil - b.daysUntil)
+      return upcomingBirthdays.sort((a, b) => {
+        const daysA = (a as any).daysUntil || 0
+        const daysB = (b as any).daysUntil || 0
+        return daysA - daysB
+      })
     } catch (error) {
       console.error('Error getting upcoming birthdays:', error)
       return []
@@ -156,11 +175,12 @@ export class BirthdayService {
 
   // Send manual birthday wish
   static async sendBirthdayWish(fromUserId: string, toUserId: string, message?: string) {
-    if (!db) return
+    // Ensure Firebase is initialized and user is authenticated
+    if (!db || !auth || !auth.currentUser) return false
 
     try {
-      const fromUser = await UserService.getUserById(fromUserId)
-      const defaultMessage = `🎉 Happy Birthday! Hope you have an amazing day! - ${fromUser?.name}`
+      const fromUser = await UserService.getUserById(fromUserId) as UserData | null
+      const defaultMessage = `🎉 Happy Birthday! Hope you have an amazing day! - ${fromUser?.name || 'User'}`
       
       await addDoc(collection(db, 'notifications'), {
         userId: toUserId,
@@ -186,7 +206,9 @@ export class BirthdayService {
   // Initialize birthday checking (call this on app startup)
   static initializeBirthdayChecker() {
     // Check birthdays immediately
-    this.checkTodaysBirthdays()
+    setTimeout(() => {
+      this.checkTodaysBirthdays()
+    }, 5000) // Delay initialization to ensure auth is fully set up
 
     // Set up daily birthday check at midnight
     const now = new Date()

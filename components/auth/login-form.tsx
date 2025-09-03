@@ -31,17 +31,7 @@ export function LoginForm() {
   const [showPasswordReset, setShowPasswordReset] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
-  const {
-    login,
-    register,
-    loginWithGoogle,
-    loginWithFacebook,
-    loginWithTwitter,
-    signInWithEmail,
-    signInWithGoogle: signInWithGoogleAuth,
-    signInWithFacebook: signInWithFacebookAuth,
-    signInWithTwitter: signInWithTwitterAuth,
-  } = useAuth()
+  const { login, register, loginWithGoogle, loginWithFacebook, loginWithTwitter } = useAuth()
   const router = useRouter()
 
   // Load saved credentials on component mount
@@ -196,24 +186,6 @@ export function LoginForm() {
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!email || !password) {
-      toast.error('Please fill in all fields')
-      return
-    }
-
-    setIsLoading(true)
-    try {
-      await signInWithEmail(email, password)
-      router.push('/dashboard')
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to sign in')
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
   const handleSocialLogin = async (provider: 'google' | 'facebook' | 'twitter') => {
     setError("")
     setIsLoading(true)
@@ -259,6 +231,8 @@ export function LoginForm() {
         errorMessage = "Pop-up was blocked by your browser. Please allow pop-ups and try again."
       } else if (error.code === 'auth/cancelled-popup-request') {
         errorMessage = "Sign-in was cancelled. Please try again."
+      } else if (error.code === 'auth/network-request-failed') {
+        errorMessage = "Network error. Please check your connection and try again."
       } else if (error.message) {
         errorMessage = error.message
       }

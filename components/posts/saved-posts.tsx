@@ -13,8 +13,8 @@ interface Post {
   id: string
   authorId: string
   content: string
-  mediaUrls?: string[]
   type: 'text' | 'image' | 'video'
+  mediaUrls: string[]
   location?: any
   likesCount: number
   commentsCount: number
@@ -29,42 +29,25 @@ interface Post {
   isSaved?: boolean
 }
 
-interface PostsFeedProps {
-  location?: { lat: number, lng: number, radius?: number }
-  friendsOnly?: boolean
-  authorId?: string
-  showNone?: boolean
-}
-
-export function PostsFeed({ location, friendsOnly, authorId, showNone }: PostsFeedProps) {
+export function SavedPosts() {
   const { user } = useAuth()
   const [posts, setPosts] = useState<Post[]>([])
   const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set())
-  const [savedPosts, setSavedPosts] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Subscribe to posts feed with filter options
-    const unsubscribe = PostService.subscribeToPostsFeed(
-      (newPosts) => {
-        setPosts(newPosts)
-        setLoading(false)
-      },
-      {
-        location,
-        friendsOnly,
-        authorId
-      }
-    )
+    if (!user) return
+
+    const unsubscribe = PostService.subscribeToSavedPosts(user.id, (savedPosts) => {
+      setPosts(savedPosts)
+      setLoading(false)
+    })
 
     return unsubscribe
-  }, [location, friendsOnly, authorId])
+  }, [user])
 
   const handleLike = async (postId: string) => {
-    if (!user) {
-      toast.error("Please log in to like posts")
-      return
-    }
+    if (!user) return
 
     try {
       const isLiked = await PostService.togglePostLike(postId, user.id)
@@ -85,28 +68,19 @@ export function PostsFeed({ location, friendsOnly, authorId, showNone }: PostsFe
     }
   }
 
-  const handleSave = async (postId: string) => {
-    if (!user) {
-      toast.error("Please log in to save posts")
-      return
-    }
+  const handleUnsave = async (postId: string) => {
+    if (!user) return
 
     try {
       const isSaved = await PostService.togglePostSave(postId, user.id)
       
-      if (isSaved) {
-        setSavedPosts(prev => new Set([...prev, postId]))
-        toast.success("Post saved for later!")
-      } else {
-        setSavedPosts(prev => {
-          const newSet = new Set(prev)
-          newSet.delete(postId)
-          return newSet
-        })
+      if (!isSaved) {
+        // Remove from local state
+        setPosts(prev => prev.filter(post => post.id !== postId))
         toast.success("Post removed from saved")
       }
     } catch (error) {
-      toast.error("Failed to save post")
+      toast.error("Failed to unsave post")
     }
   }
 
@@ -150,9 +124,9 @@ export function PostsFeed({ location, friendsOnly, authorId, showNone }: PostsFe
     return (
       <Card>
         <CardContent className="text-center py-12">
-          <MessageCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-          <h3 className="text-lg font-medium mb-2">No posts yet</h3>
-          <p className="text-muted-foreground">Be the first to share something with the community!</p>
+          <Bookmark className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+          <h3 className="text-lg font-medium mb-2">No saved posts yet</h3>
+          <p className="text-muted-foreground">Save posts you want to revisit later!</p>
         </CardContent>
       </Card>
     )
@@ -185,8 +159,8 @@ export function PostsFeed({ location, friendsOnly, authorId, showNone }: PostsFe
                   </div>
                 </div>
               </div>
-              <Button variant="ghost" size="sm">
-                <MoreHorizontal className="h-4 w-4" />
+              <Button variant="ghost" size="sm" onClick={() => handleUnsave(post.id)}>
+                <Bookmark className="h-4 w-4 fill-current text-blue-500" />
               </Button>
             </div>
           </CardHeader>
@@ -254,15 +228,6 @@ export function PostsFeed({ location, friendsOnly, authorId, showNone }: PostsFe
                 <Button variant="ghost" size="sm" className="flex-1">
                   <Share2 className="h-4 w-4 mr-2" />
                   Share
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleSave(post.id)}
-                  className={`flex-1 ${savedPosts.has(post.id) ? 'text-blue-500' : ''}`}
-                >
-                  <Bookmark className={`h-4 w-4 mr-2 ${savedPosts.has(post.id) ? 'fill-current' : ''}`} />
-                  Save
                 </Button>
               </div>
             </div>
