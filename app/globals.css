@@ -1,0 +1,285 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* Kubatana Brand Colors - Modern Green Theme */
+  --background: #fafafa;
+  --foreground: #1a1a1a;
+  --card: #ffffff;
+  --card-foreground: #1a1a1a;
+  --popover: rgba(255, 255, 255, 0.98);
+  --popover-foreground: #1a1a1a;
+  
+  /* Primary Green - Kubatana's signature color */
+  --primary: #10b981; /* Emerald green */
+  --primary-foreground: #ffffff;
+  --primary-light: #34d399; /* Lighter green for hover states */
+  --primary-dark: #059669; /* Darker green for active states */
+  
+  /* Secondary & Accent Colors */
+  --secondary: #f8fafc; /* Soft gray for secondary elements */
+  --secondary-foreground: #374151;
+  --muted: #f1f5f9; /* Very light gray for backgrounds */
+  --muted-foreground: #64748b;
+  --accent: #10b981; /* Same as primary for consistency */
+  --accent-foreground: #ffffff;
+  
+  /* Red accent for notifications, alerts, and special actions */
+  --destructive: #ef4444; /* Modern red */
+  --destructive-foreground: #ffffff;
+  --danger: #dc2626; /* Darker red for critical actions */
+  --warning: #f59e0b; /* Amber for warnings */
+  --success: #10b981; /* Green for success states */
+  
+  /* UI Elements */
+  --border: #e2e8f0;
+  --input: #ffffff;
+  --input-border: #d1d5db;
+  --ring: rgba(16, 185, 129, 0.3); /* Green focus ring */
+  
+  /* Charts & Data Visualization */
+  --chart-1: #10b981; /* Primary green */
+  --chart-2: #ef4444; /* Red */
+  --chart-3: #3b82f6; /* Blue */
+  --chart-4: #f59e0b; /* Amber */
+  --chart-5: #8b5cf6; /* Purple */
+  
+  /* Enhanced radius for modern look */
+  --radius: 12px;
+  --radius-sm: 6px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  
+  /* Sidebar - Modern green theme */
+  --sidebar: #ffffff;
+  --sidebar-foreground: #374151;
+  --sidebar-primary: #10b981;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f1f5f9;
+  --sidebar-accent-foreground: #374151;
+  --sidebar-border: #e2e8f0;
+  --sidebar-ring: rgba(16, 185, 129, 0.3);
+  
+  /* Modern shadows and gradients */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --gradient-primary: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  --gradient-secondary: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+}
+
+.dark {
+  /* Kubatana Dark Theme - Premium dark experience */
+  --background: #0a0a0a; /* True black for modern OLED look */
+  --foreground: #fafafa;
+  --card: #111111; /* Slightly lighter than background */
+  --card-foreground: #fafafa;
+  --popover: rgba(17, 17, 17, 0.98);
+  --popover-foreground: #fafafa;
+  
+  /* Primary Green - Vibrant in dark mode */
+  --primary: #22c55e; /* Brighter green for dark backgrounds */
+  --primary-foreground: #000000;
+  --primary-light: #4ade80; /* Even brighter for hover */
+  --primary-dark: #16a34a; /* Darker green for active states */
+  
+  /* Secondary & Accent Colors */
+  --secondary: #1a1a1a; /* Dark gray for secondary elements */
+  --secondary-foreground: #e5e7eb;
+  --muted: #171717; /* Very dark gray for backgrounds */
+  --muted-foreground: #9ca3af;
+  --accent: #22c55e; /* Same as primary for consistency */
+  --accent-foreground: #000000;
+  
+  /* Red accent - Vibrant in dark mode */
+  --destructive: #f87171; /* Softer red for dark backgrounds */
+  --destructive-foreground: #000000;
+  --danger: #ef4444; /* Standard red for critical actions */
+  --warning: #fbbf24; /* Brighter amber for visibility */
+  --success: #22c55e; /* Green for success states */
+  
+  /* UI Elements */
+  --border: #262626;
+  --input: #171717;
+  --input-border: #404040;
+  --ring: rgba(34, 197, 94, 0.4); /* Brighter green focus ring */
+  
+  /* Charts & Data Visualization - Optimized for dark */
+  --chart-1: #22c55e; /* Primary green */
+  --chart-2: #f87171; /* Red */
+  --chart-3: #60a5fa; /* Blue */
+  --chart-4: #fbbf24; /* Amber */
+  --chart-5: #a78bfa; /* Purple */
+  
+  /* Sidebar - Dark theme */
+  --sidebar: #111111;
+  --sidebar-foreground: #e5e7eb;
+  --sidebar-primary: #22c55e;
+  --sidebar-primary-foreground: #000000;
+  --sidebar-accent: #1a1a1a;
+  --sidebar-accent-foreground: #e5e7eb;
+  --sidebar-border: #262626;
+  --sidebar-ring: rgba(34, 197, 94, 0.4);
+  
+  /* Dark mode shadows and gradients */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+  --gradient-primary: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  --gradient-secondary: linear-gradient(135deg, #1a1a1a 0%, #262626 100%);
+}
+
+@theme inline {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  
+  /* Core Colors */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  
+  /* Primary Green System */
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-light: var(--primary-light);
+  --color-primary-dark: var(--primary-dark);
+  
+  /* Secondary & Accent */
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  
+  /* Status Colors */
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-danger: var(--danger);
+  --color-warning: var(--warning);
+  --color-success: var(--success);
+  
+  /* UI Elements */
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-input-border: var(--input-border);
+  --color-ring: var(--ring);
+  
+  /* Charts */
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  
+  /* Modern Border Radius */
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+  
+  /* Sidebar */
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  
+  /* Modern Shadows */
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  
+  /* Gradients */
+  --gradient-primary: var(--gradient-primary);
+  --gradient-secondary: var(--gradient-secondary);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  
+  /* Modern scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    @apply bg-muted;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-primary/60;
+  }
+  
+  /* Enhanced focus states for accessibility */
+  *:focus-visible {
+    @apply outline-2 outline-offset-2 outline-ring;
+  }
+  
+  /* Modern selection styling */
+  ::selection {
+    @apply bg-primary/20 text-primary-foreground;
+  }
+  
+  /* Smooth transitions for theme switching */
+  * {
+    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  }
+}
+
+/* Custom Kubatana utility classes */
+@layer utilities {
+  .kubatana-gradient {
+    background: var(--gradient-primary);
+  }
+  
+  .kubatana-shadow {
+    box-shadow: var(--shadow-md);
+  }
+  
+  .kubatana-glass {
+    backdrop-filter: blur(20px);
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+  
+  .dark .kubatana-glass {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  
+  .kubatana-animate {
+    animation: kubatana-pulse 2s ease-in-out infinite;
+  }
+  
+  @keyframes kubatana-pulse {
+    0%, 100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.8;
+      transform: scale(1.02);
+    }
+  }
+}
