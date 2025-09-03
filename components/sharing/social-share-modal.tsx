@@ -80,7 +80,7 @@ export function SocialShareModal({ isOpen, onClose, post }: SocialShareModalProp
     
     const shareOptions: ShareOptions = {
       url: shareUrl,
-      title: `${post.author.name}'s Post on Kubatana`,
+      title: `${post.author?.name || "Unknown User"}'s Post on Kubatana`,
       description: fullMessage,
       image: post.mediaUrls?.[0],
       hashtags: post.tags,
@@ -132,10 +132,12 @@ export function SocialShareModal({ isOpen, onClose, post }: SocialShareModalProp
           {/* Post Preview */}
           <div className="bg-muted rounded-lg p-3">
             <div className="flex items-center space-x-2 mb-2">
-              <span className="font-medium text-sm">{post.author.name}</span>
-              <Badge variant="outline" className="text-xs">
-                {post.author.role}
-              </Badge>
+              <span className="font-medium text-sm">{post.author?.name || "Unknown User"}</span>
+              {post.author?.role && (
+                <Badge variant="outline" className="text-xs">
+                  {post.author.role}
+                </Badge>
+              )}
             </div>
             <p className="text-sm text-muted-foreground line-clamp-3">{post.content}</p>
             {post.mediaUrls && post.mediaUrls.length > 0 && post.type === 'image' && (

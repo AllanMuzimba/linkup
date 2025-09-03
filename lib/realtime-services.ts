@@ -186,7 +186,7 @@ export class UserService {
 
   // Get user's own posts
   static subscribeToUserPosts(userId: string, callback: (posts: any[]) => void) {
-    if (!db || !isAuthenticated()) return () => {}
+    if (!db) return () => {} // Allow access to user posts for all users
     
     const postsRef = collection(db, 'posts')
     const userPostsQuery = query(
@@ -201,20 +201,21 @@ export class UserService {
         snapshot.docs.map(async (postDoc) => {
           const postData = postDoc.data()
           
-          // Check if user liked this post
-          if (db) {
-            const likeRef = doc(db, 'likes', `${userId}_${postDoc.id}`)
+          // Check if user liked this post (only if authenticated)
+          let isLiked = false;
+          if (isAuthenticated() && db) {
+            const likeRef = doc(db, 'likes', `${auth?.currentUser?.uid}_${postDoc.id}`)
             const likeSnap = await getDoc(likeRef)
-            
-            return {
-              id: postDoc.id,
-              ...postData,
-              isLiked: likeSnap.exists(),
-              createdAt: postData.createdAt?.toDate(),
-              updatedAt: postData.updatedAt?.toDate()
-            }
+            isLiked = likeSnap.exists()
           }
-          return null
+          
+          return {
+            id: postDoc.id,
+            ...postData,
+            isLiked,
+            createdAt: postData.createdAt?.toDate(),
+            updatedAt: postData.updatedAt?.toDate()
+          }
         })
       )
       
@@ -224,7 +225,7 @@ export class UserService {
 
   // Get posts user has liked/engaged with
   static subscribeToLikedPosts(userId: string, callback: (posts: any[]) => void) {
-    if (!db || !isAuthenticated()) return () => {}
+    if (!db || !isAuthenticated()) return () => {} // This should only be accessible to authenticated users
     
     const likesRef = collection(db, 'likes')
     const userLikesQuery = query(
@@ -273,7 +274,7 @@ export class UserService {
 
   // Get user by ID
   static async getUserById(userId: string) {
-    if (!db || !isAuthenticated()) return null
+    if (!db) return null // Allow access to user profiles for all users
     
     try {
       const userRef = doc(db, 'users', userId)
@@ -294,7 +295,7 @@ export class UserService {
 
   // Find user by email or phone
   static async findUserByEmailOrPhone(email?: string, phone?: string) {
-    if (!db || !isAuthenticated() || (!email && !phone)) return null
+    if (!db || (!email && !phone)) return null // Allow access but require email or phone
     
     try {
       const usersRef = collection(db, 'users')
@@ -406,7 +407,7 @@ export class PostService {
 
   // Subscribe to comments for a post
   static subscribeToPostComments(postId: string, callback: (comments: any[]) => void) {
-    if (!db || !isAuthenticated()) return () => {}
+    if (!db) return () => {} // Allow access to comments for all users
     
     const commentsRef = collection(db, 'comments')
     const commentsQuery = query(
@@ -476,35 +477,69 @@ export class PostService {
       return () => {}
     }
     
-    return onSnapshot(postsQuery, async (snapshot) => {
-      let posts = await Promise.all(
-        snapshot.docs.map(async (postDoc) => {
-          const postData = postDoc.data()
-          
-          // Get author info
+    return onSnapshot(postsQuery, async (snapshot: any) => {
+      // Create a Set to track unique author IDs
+      const authorIds = new Set<string>()
+      
+      // First, collect all unique author IDs from posts
+      snapshot.docs.forEach((postDoc: any) => {
+        const postData = postDoc.data()
+        if (postData.authorId) {
+          authorIds.add(postData.authorId)
+        }
+      })
+      
+      // Fetch all author data in a single batch
+      const authorsMap: {[key: string]: any} = {}
+      await Promise.all(
+        Array.from(authorIds).map(async (authorId) => {
           if (db) {
-            const authorRef = doc(db, 'users', postData.authorId)
-            const authorSnap = await getDoc(authorRef)
-            const authorData = authorSnap.exists() ? authorSnap.data() : null
-            
-            // Calculate distance if location provided
-            let distance = null
-            if (options?.location && postData.location) {
-              distance = UserService.calculateDistance(options.location, postData.location)
-            }
-            
-            return {
-              id: postDoc.id,
-              ...postData,
-              author: authorData,
-              distance,
-              createdAt: postData.createdAt?.toDate(),
-              updatedAt: postData.updatedAt?.toDate()
+            try {
+              const authorRef = doc(db, 'users', authorId)
+              const authorSnap = await getDoc(authorRef)
+              if (authorSnap.exists()) {
+                const userData = authorSnap.data()
+                authorsMap[authorId] = {
+                  name: userData.name || 'Unknown User',
+                  username: userData.username || authorId.substring(0, 8),
+                  avatar: userData.avatar || null,
+                  role: userData.role || 'user'
+                }
+              }
+            } catch (error) {
+              console.warn('Error fetching author data:', authorId, error)
             }
           }
-          return null
         })
       )
+      
+      // Process posts with author data
+      let posts = snapshot.docs.map((postDoc: any) => {
+        const postData = postDoc.data()
+        const authorId = postData.authorId
+        
+        // Get author from our pre-fetched map or create default
+        const author = authorsMap[authorId] || {
+          name: 'Unknown User',
+          username: authorId ? authorId.substring(0, 8) : 'unknown',
+          role: 'user'
+        }
+        
+        // Calculate distance if location provided
+        let distance = null
+        if (options?.location && postData.location) {
+          distance = UserService.calculateDistance(options.location, postData.location)
+        }
+        
+        return {
+          id: postDoc.id,
+          ...postData,
+          author,
+          distance,
+          createdAt: postData.createdAt?.toDate(),
+          updatedAt: postData.updatedAt?.toDate()
+        }
+      })
       
       // Apply filters
       if (options?.friendsOnly && options?.authorId) {
@@ -547,32 +582,71 @@ export class PostService {
       if (savedPostIds.length === 0) return []
       
       // Get the actual posts
-      const postPromises = savedPostIds.map(async (postId) => {
+      const posts = []
+      const authorIds = new Set<string>()
+      const postsData = []
+      
+      // First, get all posts and collect author IDs
+      for (const postId of savedPostIds) {
+        if (!db) continue
         const postRef = doc(db, 'posts', postId)
         const postSnap = await getDoc(postRef)
         
         if (postSnap.exists()) {
           const postData = postSnap.data()
-          
-          // Get author info
-          const authorRef = doc(db, 'users', postData.authorId)
-          const authorSnap = await getDoc(authorRef)
-          const authorData = authorSnap.exists() ? authorSnap.data() : null
-          
-          return {
+          if (postData.authorId) {
+            authorIds.add(postData.authorId)
+          }
+          postsData.push({
             id: postSnap.id,
             ...postData,
-            author: authorData,
-            isSaved: true,
-            createdAt: postData.createdAt?.toDate(),
-            updatedAt: postData.updatedAt?.toDate()
-          }
+            isSaved: true
+          })
         }
-        return null
-      })
+      }
       
-      const posts = await Promise.all(postPromises)
-      return posts.filter(Boolean) as any[]
+      // Fetch all author data in batch
+      const authorsMap: {[key: string]: any} = {}
+      await Promise.all(
+        Array.from(authorIds).map(async (authorId) => {
+          if (db) {
+            try {
+              const authorRef = doc(db, 'users', authorId)
+              const authorSnap = await getDoc(authorRef)
+              if (authorSnap.exists()) {
+                const userData = authorSnap.data()
+                authorsMap[authorId] = {
+                  name: userData.name || 'Unknown User',
+                  username: userData.username || authorId.substring(0, 8),
+                  avatar: userData.avatar || null,
+                  role: userData.role || 'user'
+                }
+              }
+            } catch (error) {
+              console.warn('Error fetching author data:', authorId, error)
+            }
+          }
+        })
+      )
+      
+      // Combine posts with author data
+      for (const post of postsData) {
+        const authorId = post.authorId
+        const author = authorsMap[authorId] || {
+          name: 'Unknown User',
+          username: authorId ? authorId.substring(0, 8) : 'unknown',
+          role: 'user'
+        }
+        
+        posts.push({
+          ...post,
+          author,
+          createdAt: post.createdAt?.toDate(),
+          updatedAt: post.updatedAt?.toDate()
+        })
+      }
+      
+      return posts
     } catch (error) {
       console.error('Error fetching saved posts:', error)
       return []
@@ -591,41 +665,78 @@ export class PostService {
       orderBy('savedAt', 'desc')
     )
     
-    return onSnapshot(savedPostsQuery, async (savedSnapshot) => {
-      const savedPostIds = savedSnapshot.docs.map(doc => doc.data().postId)
+    return onSnapshot(savedPostsQuery, async (snapshot) => {
+      const savedPostIds = snapshot.docs.map(doc => doc.data().postId)
       
       if (savedPostIds.length === 0) {
         callback([])
         return
       }
       
-      // Get the actual posts
-      const postPromises = savedPostIds.map(async (postId) => {
+      // Fetch all posts first
+      const postsData = []
+      const authorIds = new Set<string>()
+      
+      for (const postId of savedPostIds) {
+        if (!db) continue
         const postRef = doc(db, 'posts', postId)
         const postSnap = await getDoc(postRef)
         
         if (postSnap.exists()) {
           const postData = postSnap.data()
-          
-          // Get author info
-          const authorRef = doc(db, 'users', postData.authorId)
-          const authorSnap = await getDoc(authorRef)
-          const authorData = authorSnap.exists() ? authorSnap.data() : null
-          
-          return {
+          if (postData.authorId) {
+            authorIds.add(postData.authorId)
+          }
+          postsData.push({
             id: postSnap.id,
             ...postData,
-            author: authorData,
-            isSaved: true,
-            createdAt: postData.createdAt?.toDate(),
-            updatedAt: postData.updatedAt?.toDate()
-          }
+            isSaved: true
+          })
         }
-        return null
+      }
+      
+      // Fetch all author data in batch
+      const authorsMap: {[key: string]: any} = {}
+      await Promise.all(
+        Array.from(authorIds).map(async (authorId) => {
+          if (db) {
+            try {
+              const authorRef = doc(db, 'users', authorId)
+              const authorSnap = await getDoc(authorRef)
+              if (authorSnap.exists()) {
+                const userData = authorSnap.data()
+                authorsMap[authorId] = {
+                  name: userData.name || 'Unknown User',
+                  username: userData.username || authorId.substring(0, 8),
+                  avatar: userData.avatar || null,
+                  role: userData.role || 'user'
+                }
+              }
+            } catch (error) {
+              console.warn('Error fetching author data:', authorId, error)
+            }
+          }
+        })
+      )
+      
+      // Combine posts with author data
+      const posts = postsData.map(post => {
+        const authorId = post.authorId
+        const author = authorsMap[authorId] || {
+          name: 'Unknown User',
+          username: authorId ? authorId.substring(0, 8) : 'unknown',
+          role: 'user'
+        }
+        
+        return {
+          ...post,
+          author,
+          createdAt: post.createdAt?.toDate(),
+          updatedAt: post.updatedAt?.toDate()
+        }
       })
       
-      const posts = await Promise.all(postPromises)
-      callback(posts.filter(Boolean) as any[])
+      callback(posts)
     })
   }
 
@@ -635,6 +746,7 @@ export class PostService {
     
     const likeRef = doc(db, 'likes', `${userId}_${postId}`)
     const likeSnap = await getDoc(likeRef)
+    if (!db) return;
     const postRef = doc(db, 'posts', postId)
     
     if (likeSnap.exists()) {
@@ -673,6 +785,7 @@ export class PostService {
   static async sharePost(postId: string, userId: string, shareData?: any) {
     if (!db || !isAuthenticated()) return
     
+    if (!db) return;
     const postRef = doc(db, 'posts', postId)
     await updateDoc(postRef, {
       sharesCount: increment(1)
@@ -1467,6 +1580,34 @@ export class FileService {
     return await Promise.all(uploadPromises)
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

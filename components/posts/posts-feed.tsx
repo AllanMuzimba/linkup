@@ -20,10 +20,10 @@ interface Post {
   commentsCount: number
   sharesCount: number
   createdAt: Date
-  author: {
+  author?: {
     name: string
     avatar?: string
-  }
+  } | null
   distance?: number
   isLiked?: boolean
   isSaved?: boolean
@@ -166,11 +166,16 @@ export function PostsFeed({ location, friendsOnly, authorId, showNone }: PostsFe
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
                 <Avatar>
-                  <AvatarImage src={post.author.avatar || "/placeholder-user.jpg"} alt={post.author.name} />
-                  <AvatarFallback>{post.author.name.charAt(0)}</AvatarFallback>
+                  <AvatarImage 
+                    src={post.author?.avatar || "/placeholder-user.jpg"} 
+                    alt={post.author?.name || "Unknown User"} 
+                  />
+                  <AvatarFallback>
+                    {post.author?.name ? post.author.name.charAt(0) : "U"}
+                  </AvatarFallback>
                 </Avatar>
                 <div>
-                  <p className="font-medium">{post.author.name}</p>
+                  <p className="font-medium">{post.author?.name || "Unknown User"}</p>
                   <div className="flex items-center space-x-2 text-sm text-muted-foreground">
                     <span>{formatTimeAgo(post.createdAt)}</span>
                     {post.distance && (

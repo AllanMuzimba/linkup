@@ -152,18 +152,29 @@ export function PostCard({ post, onLike, onShare, onComment, onSave }: PostCardP
           <div className="flex items-start justify-between">
             <div className="flex items-center space-x-3">
               <Avatar>
-                <AvatarImage src={post.author.avatar || "/placeholder.svg"} alt={post.author.name} />
-                <AvatarFallback>{post.author.name.charAt(0)}</AvatarFallback>
+                <AvatarImage 
+                  src={post.author?.avatar || "/placeholder.svg"} 
+                  alt={post.author?.name || "Unknown User"} 
+                />
+                <AvatarFallback>
+                  {post.author?.name ? post.author.name.charAt(0) : "U"}
+                </AvatarFallback>
               </Avatar>
               <div>
                 <div className="flex items-center space-x-2">
-                  <p className="font-medium">{post.author.name}</p>
-                  <Badge variant="outline" className="text-xs">
-                    {post.author.role}
-                  </Badge>
+                  <p className="font-medium">{post.author?.name || "Unknown User"}</p>
+                  {post.author?.role && (
+                    <Badge variant="outline" className="text-xs">
+                      {post.author.role}
+                    </Badge>
+                  )}
                 </div>
                 <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-                  <span>@{post.author.username}</span>
+                  {post.author?.username ? (
+                    <span>@{post.author.username}</span>
+                  ) : (
+                    <span>@unknown</span>
+                  )}
                   <span>•</span>
                   <span>{formatTimeAgo(post.createdAt)}</span>
                   <VisibilityIcon className="h-3 w-3" />

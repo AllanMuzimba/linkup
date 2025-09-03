@@ -1,12 +1,12 @@
 export interface Post {
   id: string
   authorId: string
-  author: {
+  author?: {
     name: string
     username: string
     avatar?: string
     role: string
-  }
+  } | null
   content: string
   mediaUrls?: string[]
   type: 'text' | 'image' | 'video'
