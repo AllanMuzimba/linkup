@@ -25,11 +25,14 @@ import {
   Square,
   Music,
   Sparkles,
-  RotateCcw
+  RotateCcw,
+  Smile,
+  Filter
 } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
 import { toast } from "sonner"
 import type { CreatePostData } from "@/types/post"
+import * as faceapi from 'face-api.js'
 
 interface CreatePostProps {
   onCreatePost: (postData: CreatePostData) => void
@@ -39,6 +42,18 @@ interface CreatePostProps {
 
 // Video effect types
 type VideoEffect = 'none' | 'grayscale' | 'sepia' | 'invert' | 'blur' | 'brightness' | 'contrast'
+
+// Face filter types
+type FaceFilter = 'none' | 'dog-nose' | 'dog-ears' | 'sunglasses' | 'mustache' | 'flower'
+
+// Emoji overlay interface
+interface EmojiOverlay {
+  id: string
+  emoji: string
+  x: number
+  y: number
+  size: number
+}
 
 export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
   const { user } = useAuth()
@@ -59,11 +74,79 @@ export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
   const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([])
   const [selectedCameraId, setSelectedCameraId] = useState<string | undefined>(undefined)
   const [showCameraOptions, setShowCameraOptions] = useState(false)
+  // Face filter and emoji states
+  const [showFaceFilters, setShowFaceFilters] = useState(false)
+  const [currentFaceFilter, setCurrentFaceFilter] = useState<FaceFilter>('none')
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+  const [emojiOverlays, setEmojiOverlays] = useState<EmojiOverlay[]>([])
+  const [draggingEmojiId, setDraggingEmojiId] = useState<string | null>(null)
+  
   const videoRef = useRef<HTMLVideoElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const recordedChunksRef = useRef<Blob[]>([])
   const audioContextRef = useRef<AudioContext | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const faceDetectionIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  
+  // Initialize face detection models
+  useEffect(() => {
+    const loadFaceModels = async () => {
+      try {
+        await faceapi.nets.tinyFaceDetector.loadFromUri('/models')
+        await faceapi.nets.faceLandmark68Net.loadFromUri('/models')
+        console.log('Face detection models loaded')
+      } catch (error) {
+        console.error('Error loading face detection models:', error)
+        toast.error('Failed to load face detection models')
+      }
+    }
+    
+    loadFaceModels()
+    
+    return () => {
+      if (faceDetectionIntervalRef.current) {
+        clearInterval(faceDetectionIntervalRef.current)
+      }
+    }
+  }, [])
+  
+  // Start face detection
+  const startFaceDetection = () => {
+    if (!videoRef.current) return
+    
+    // Clear any existing interval
+    if (faceDetectionIntervalRef.current) {
+      clearInterval(faceDetectionIntervalRef.current)
+    }
+    
+    // Start detection interval
+    faceDetectionIntervalRef.current = setInterval(async () => {
+      if (videoRef.current && videoRef.current.readyState === 4) {
+        try {
+          const detections = await faceapi.detectAllFaces(
+            videoRef.current, 
+            new faceapi.TinyFaceDetectorOptions()
+          ).withFaceLandmarks()
+          
+          // Render face filters if a filter is selected
+          if (currentFaceFilter !== 'none' && detections.length > 0) {
+            renderFaceFilter(detections);
+          }
+        } catch (error) {
+          console.error('Face detection error:', error)
+        }
+      }
+    }, 100) // Run detection every 100ms
+  }
+  
+  // Stop face detection
+  const stopFaceDetection = () => {
+    if (faceDetectionIntervalRef.current) {
+      clearInterval(faceDetectionIntervalRef.current)
+      faceDetectionIntervalRef.current = null
+    }
+  }
   
   // Video effects
   const videoEffects: Record<VideoEffect, string> = {
@@ -76,6 +159,16 @@ export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
     contrast: 'contrast(200%)'
   }
 
+  // Face filters
+  const faceFilters: Record<FaceFilter, string> = {
+    none: 'No Filter',
+    'dog-nose': 'Dog Nose',
+    'dog-ears': 'Dog Ears',
+    'sunglasses': 'Sunglasses',
+    'mustache': 'Mustache',
+    'flower': 'Flower'
+  }
+
   // Sample music tracks (in a real app, these would come from an API)
   const musicTracks = [
     { id: '1', name: 'Upbeat Pop', url: '/music/upbeat-pop.mp3' },
@@ -83,6 +176,14 @@ export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
     { id: '3', name: 'Energetic Rock', url: '/music/energetic-rock.mp3' },
     { id: '4', name: 'Hip Hop Beat', url: '/music/hip-hop-beat.mp3' }
   ]
+
+  // Emoji categories for overlays
+  const emojiCategories = {
+    faces: ["😀", "😃", "😄", "😁", "😆", "😅", "🤣", "😂", "🙂", "🙃", "😉", "😊", "😇", "🥰", "😍", "🤩"],
+    hearts: ["❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💖", "💕", "💞", "💓", "💗"],
+    objects: ["🔥", "⭐", "🌟", "✨", "💫", "⚡", "💥", "💯", "🎉", "🎊", "🎈", "🎁", "🏆", "🥇", "🥈", "🥉"],
+    animals: ["🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐨", "🐯", "🦁", "🐮", "🐷", "🐸", "🐵"]
+  }
 
   // Video recording functions
   const startCamera = async (deviceId?: string) => {
@@ -150,6 +251,9 @@ export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
               console.error("Error playing video:", err);
               toast.error("Could not start camera preview. Please try reloading the page.");
             });
+            
+            // Start face detection
+            startFaceDetection();
           }
         };
         
@@ -185,6 +289,7 @@ export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
             videoRef.current.srcObject = stream;
             videoRef.current.style.display = 'block';
             videoRef.current.play().catch(e => console.error("Play error:", e));
+            startFaceDetection(); // Start face detection
           }
           setMediaMode("video");
         } catch (retryError) {
@@ -256,12 +361,216 @@ export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
       console.log("Clearing video element");
       videoRef.current.srcObject = null;
     }
+    
+    // Stop face detection
+    stopFaceDetection();
   }
 
   const applyEffect = (effect: VideoEffect) => {
     setCurrentEffect(effect)
     setShowEffects(false)
   }
+
+  // Apply face filter
+  const applyFaceFilter = (filter: FaceFilter) => {
+    setCurrentFaceFilter(filter)
+    setShowFaceFilters(false)
+    
+    // If a filter is selected and camera is active, start face detection
+    if (filter !== 'none' && mediaStreamRef.current) {
+      startFaceDetection()
+    } else if (filter === 'none') {
+      // Clear canvas if no filter is selected
+      if (canvasRef.current) {
+        const ctx = canvasRef.current.getContext('2d');
+        if (ctx) {
+          ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+        }
+      }
+    }
+  }
+
+  // Add emoji overlay
+  const addEmojiOverlay = (emoji: string) => {
+    const newEmoji: EmojiOverlay = {
+      id: Date.now().toString(),
+      emoji,
+      x: 50,
+      y: 50,
+      size: 40
+    }
+    setEmojiOverlays([...emojiOverlays, newEmoji])
+    setShowEmojiPicker(false)
+  }
+
+  // Remove emoji overlay
+  const removeEmojiOverlay = (id: string) => {
+    setEmojiOverlays(emojiOverlays.filter(emoji => emoji.id !== id))
+  }
+
+  // Start dragging emoji
+  const startDraggingEmoji = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setDraggingEmojiId(id)
+  }
+
+  // Handle mouse move for dragging
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!draggingEmojiId || !videoRef.current) return
+    
+    const videoRect = videoRef.current.getBoundingClientRect()
+    const x = ((e.clientX - videoRect.left) / videoRect.width) * 100
+    const y = ((e.clientY - videoRect.top) / videoRect.height) * 100
+    
+    setEmojiOverlays(emojiOverlays.map(emoji => 
+      emoji.id === draggingEmojiId 
+        ? { ...emoji, x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) } 
+        : emoji
+    ))
+  }
+
+  // Stop dragging
+  const stopDragging = () => {
+    setDraggingEmojiId(null)
+  }
+
+  // Render face filter on canvas
+  const renderFaceFilter = (detections: faceapi.WithFaceLandmarks<{ detection: faceapi.FaceDetection }>[]) => {
+    if (!videoRef.current || !canvasRef.current) return;
+    
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const displaySize = { width: video.width, height: video.height };
+    
+    faceapi.matchDimensions(canvas, displaySize);
+    const resizedDetections = faceapi.resizeResults(detections, displaySize);
+    
+    // Clear canvas
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // Draw face filter based on current selection
+      resizedDetections.forEach(detection => {
+        const landmarks = detection.landmarks;
+        const nose = landmarks.getNose();
+        const leftEye = landmarks.getLeftEye();
+        const rightEye = landmarks.getRightEye();
+        const mouth = landmarks.getMouth();
+        
+        switch (currentFaceFilter) {
+          case 'dog-nose':
+            // Draw dog nose filter
+            if (nose.length > 0) {
+              const noseTip = nose[Math.floor(nose.length / 2)];
+              ctx.fillStyle = '#000';
+              ctx.beginPath();
+              ctx.arc(noseTip.x, noseTip.y, 10, 0, Math.PI * 2);
+              ctx.fill();
+              
+              // Draw nostrils
+              ctx.beginPath();
+              ctx.arc(noseTip.x - 5, noseTip.y, 3, 0, Math.PI * 2);
+              ctx.arc(noseTip.x + 5, noseTip.y, 3, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            break;
+            
+          case 'dog-ears':
+            // Draw dog ears filter
+            if (leftEye.length > 0 && rightEye.length > 0) {
+              const leftEarX = leftEye[0].x - 20;
+              const leftEarY = leftEye[0].y - 40;
+              const rightEarX = rightEye[rightEye.length - 1].x + 20;
+              const rightEarY = rightEye[rightEye.length - 1].y - 40;
+              
+              // Draw left ear
+              ctx.fillStyle = '#8B4513';
+              ctx.beginPath();
+              ctx.moveTo(leftEarX, leftEarY);
+              ctx.lineTo(leftEarX - 15, leftEarY - 30);
+              ctx.lineTo(leftEarX + 10, leftEarY);
+              ctx.fill();
+              
+              // Draw right ear
+              ctx.beginPath();
+              ctx.moveTo(rightEarX, rightEarY);
+              ctx.lineTo(rightEarX + 15, rightEarY - 30);
+              ctx.lineTo(rightEarX - 10, rightEarY);
+              ctx.fill();
+            }
+            break;
+            
+          case 'sunglasses':
+            // Draw sunglasses filter
+            if (leftEye.length > 0 && rightEye.length > 0) {
+              const leftEyeBounds = {
+                x: Math.min(...leftEye.map(p => p.x)),
+                y: Math.min(...leftEye.map(p => p.y)),
+                width: Math.max(...leftEye.map(p => p.x)) - Math.min(...leftEye.map(p => p.x)),
+                height: Math.max(...leftEye.map(p => p.y)) - Math.min(...leftEye.map(p => p.y))
+              };
+              
+              const rightEyeBounds = {
+                x: Math.min(...rightEye.map(p => p.x)),
+                y: Math.min(...rightEye.map(p => p.y)),
+                width: Math.max(...rightEye.map(p => p.x)) - Math.min(...rightEye.map(p => p.y)),
+                height: Math.max(...rightEye.map(p => p.y)) - Math.min(...rightEye.map(p => p.y))
+              };
+              
+              // Draw sunglasses
+              ctx.fillStyle = '#000';
+              ctx.fillRect(
+                leftEyeBounds.x - 10, 
+                leftEyeBounds.y - 10, 
+                (rightEyeBounds.x + rightEyeBounds.width + 10) - (leftEyeBounds.x - 10), 
+                Math.max(leftEyeBounds.height, rightEyeBounds.height) + 20
+              );
+              
+              // Draw bridge
+              ctx.fillRect(
+                leftEyeBounds.x + leftEyeBounds.width - 5,
+                leftEyeBounds.y - 10,
+                (rightEyeBounds.x - (leftEyeBounds.x + leftEyeBounds.width)) + 10,
+                10
+              );
+            }
+            break;
+            
+          case 'mustache':
+            // Draw mustache filter
+            if (mouth.length > 0) {
+              const upperLip = mouth.slice(0, 6);
+              const centerX = upperLip.reduce((sum, point) => sum + point.x, 0) / upperLip.length;
+              const centerY = upperLip.reduce((sum, point) => sum + point.y, 0) / upperLip.length;
+              
+              ctx.fillStyle = '#000';
+              ctx.beginPath();
+              ctx.ellipse(centerX, centerY + 10, 30, 10, 0, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            break;
+            
+          case 'flower':
+            // Draw flower filter on nose
+            if (nose.length > 0) {
+              const noseTip = nose[Math.floor(nose.length / 2)];
+              ctx.fillStyle = '#FF69B4';
+              ctx.beginPath();
+              ctx.arc(noseTip.x, noseTip.y - 20, 15, 0, Math.PI * 2);
+              ctx.fill();
+              
+              // Draw flower center
+              ctx.fillStyle = '#FFD700';
+              ctx.beginPath();
+              ctx.arc(noseTip.x, noseTip.y - 20, 5, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            break;
+        }
+      });
+    }
+  };
 
   const handleMusicSelect = (track: { id: string; name: string; url: string }) => {
     // In a real implementation, you would load and play the selected track
@@ -360,6 +669,7 @@ export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
     return () => {
       if (!isOpen) {
         stopCamera();
+        setEmojiOverlays([]); // Clear emoji overlays when closing
       }
     };
   }, [isOpen, mediaMode]);
@@ -384,6 +694,8 @@ export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
         setMediaMode(null)
         setCurrentEffect('none')
         setBackgroundMusic(null)
+        setEmojiOverlays([]) // Clear emoji overlays
+        setCurrentFaceFilter('none') // Reset face filter
       }
       onClose()
     }}>
@@ -460,7 +772,47 @@ export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
                     objectFit: 'cover'
                   }}
                   className="w-full h-64 rounded-lg bg-black"
+                  onMouseMove={handleMouseMove}
+                  onMouseUp={stopDragging}
+                  onMouseLeave={stopDragging}
                 />
+                
+                {/* Canvas for face filters */}
+                <canvas
+                  ref={canvasRef}
+                  className="absolute top-0 left-0 w-full h-64 rounded-lg"
+                  style={{ zIndex: 5 }}
+                />
+                
+                {/* Emoji overlays */}
+                {emojiOverlays.map((emoji) => (
+                  <div
+                    key={emoji.id}
+                    className="absolute cursor-move"
+                    style={{
+                      left: `${emoji.x}%`,
+                      top: `${emoji.y}%`,
+                      fontSize: `${emoji.size}px`,
+                      transform: 'translate(-50%, -50%)',
+                      zIndex: 10,
+                      touchAction: 'none'
+                    }}
+                    onMouseDown={(e) => startDraggingEmoji(emoji.id, e)}
+                  >
+                    <div className="relative">
+                      {emoji.emoji}
+                      <button
+                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-xs"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          removeEmojiOverlay(emoji.id)
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
+                ))}
                 
                 {/* Fallback message if video fails to display */}
                 <div className="absolute inset-0 flex items-center justify-center">
@@ -494,6 +846,26 @@ export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
                       <Sparkles className="h-4 w-4 text-white" />
                     </Button>
                     
+                    {/* Face Filters Button */}
+                    <Button 
+                      size="sm" 
+                      variant="secondary" 
+                      className="h-8 w-8 p-0 bg-black/50 hover:bg-black/70"
+                      onClick={() => setShowFaceFilters(!showFaceFilters)}
+                    >
+                      <Filter className="h-4 w-4 text-white" />
+                    </Button>
+                    
+                    {/* Emoji Picker Button */}
+                    <Button 
+                      size="sm" 
+                      variant="secondary" 
+                      className="h-8 w-8 p-0 bg-black/50 hover:bg-black/70"
+                      onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                    >
+                      <Smile className="h-4 w-4 text-white" />
+                    </Button>
+                    
                     <Button 
                       size="sm" 
                       variant="secondary" 
@@ -524,6 +896,7 @@ export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
                       stopCamera()
                       setMediaMode(null)
                       setSelectedVideo(null)
+                      setEmojiOverlays([]) // Clear emoji overlays when stopping camera
                     }}
                   >
                     <X className="h-4 w-4 text-white" />
@@ -543,6 +916,47 @@ export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
                       >
                         {effect.charAt(0).toUpperCase() + effect.slice(1)}
                       </Button>
+                    ))}
+                  </div>
+                )}
+                
+                {/* Face Filters Panel */}
+                {showFaceFilters && (
+                  <div className="absolute top-12 left-2 bg-black/70 rounded-lg p-2 flex space-x-2">
+                    {Object.entries(faceFilters).map(([filter, name]) => (
+                      <Button
+                        key={filter}
+                        size="sm"
+                        variant={currentFaceFilter === filter ? "default" : "secondary"}
+                        className="h-8 text-xs"
+                        onClick={() => applyFaceFilter(filter as FaceFilter)}
+                      >
+                        {name}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+                
+                {/* Emoji Picker Panel */}
+                {showEmojiPicker && (
+                  <div className="absolute top-12 right-2 bg-black/70 rounded-lg p-2 w-48 max-h-40 overflow-y-auto">
+                    <div className="text-white text-sm font-medium mb-2">Add Emoji</div>
+                    {Object.entries(emojiCategories).map(([category, emojis]) => (
+                      <div key={category} className="mb-2">
+                        <div className="text-xs text-gray-400 capitalize">{category}</div>
+                        <div className="grid grid-cols-6 gap-1">
+                          {emojis.map((emoji, index) => (
+                            <Button
+                              key={index}
+                              variant="ghost"
+                              className="h-8 w-8 p-0 text-lg hover:bg-white/20"
+                              onClick={() => addEmojiOverlay(emoji)}
+                            >
+                              {emoji}
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
                     ))}
                   </div>
                 )}
@@ -572,230 +986,4 @@ export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
                 {/* Music Panel */}
                 {showMusicOptions && (
                   <div className="absolute top-12 right-2 bg-black/70 rounded-lg p-2 w-48 max-h-40 overflow-y-auto">
-                    <div className="text-white text-sm font-medium mb-2">Background Music</div>
-                    {musicTracks.map((track) => (
-                      <Button
-                        key={track.id}
-                        variant="ghost"
-                        className="w-full justify-start h-8 text-white text-xs hover:bg-white/20"
-                        onClick={() => handleMusicSelect(track)}
-                      >
-                        <Music className="h-3 w-3 mr-2" />
-                        {track.name}
-                      </Button>
-                    ))}
-                    <Button
-                      variant="ghost"
-                      className="w-full justify-start h-8 text-white text-xs hover:bg-white/20"
-                      onClick={() => {
-                        setBackgroundMusic(null)
-                        setShowMusicOptions(false)
-                      }}
-                    >
-                      <X className="h-3 w-3 mr-2" />
-                      No Music
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Selected Images Preview */}
-            {selectedImages.length > 0 && (
-              <div className="grid grid-cols-2 gap-2 mt-4">
-                {selectedImages.map((file, index) => (
-                  <div key={index} className="relative">
-                    <img
-                      src={URL.createObjectURL(file) || "/placeholder.svg"}
-                      alt={`Selected ${index + 1}`}
-                      className="w-full h-32 object-cover rounded-lg"
-                    />
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      className="absolute top-2 right-2 h-6 w-6 p-0"
-                      onClick={() => removeImage(index)}
-                    >
-                      <X className="h-3 w-3" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Selected Video Preview */}
-            {selectedVideo && (
-              <div className="mt-4 relative">
-                <video 
-                  src={URL.createObjectURL(selectedVideo)} 
-                  controls 
-                  className="w-full h-64 object-cover rounded-lg"
-                />
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  className="absolute top-2 right-2 h-6 w-6 p-0"
-                  onClick={removeVideo}
-                >
-                  <X className="h-3 w-3" />
-                </Button>
-              </div>
-            )}
-
-            {/* Tags */}
-            {tags.length > 0 && (
-              <div className="flex flex-wrap gap-2 mt-4">
-                {tags.map((tag) => (
-                  <Badge key={tag} variant="secondary" className="text-xs">
-                    #{tag}
-                    <Button size="sm" variant="ghost" className="h-auto w-auto p-0 ml-1" onClick={() => removeTag(tag)}>
-                      <X className="h-3 w-3" />
-                    </Button>
-                  </Badge>
-                ))}
-              </div>
-            )}
-
-            {/* Location */}
-            {location && (
-              <div className="flex items-center space-x-2 mt-4 text-sm text-muted-foreground">
-                <MapPin className="h-4 w-4" />
-                <span>{location}</span>
-                <Button size="sm" variant="ghost" className="h-auto w-auto p-0" onClick={() => setLocation("")}>
-                  <X className="h-3 w-3" />
-                </Button>
-              </div>
-            )}
-
-            <div className="flex items-center justify-between mt-4 pt-4 border-t">
-              <div className="flex items-center space-x-2">
-                {/* Image Upload */}
-                <label className="cursor-pointer">
-                  <input 
-                    type="file" 
-                    multiple 
-                    accept="image/*" 
-                    className="hidden" 
-                    onChange={handleImageSelect} 
-                    disabled={mediaMode === "video" || !!selectedVideo}
-                  />
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    className="text-muted-foreground" 
-                    disabled={mediaMode === "video" || !!selectedVideo}
-                  >
-                    <ImageIcon className="h-4 w-4 mr-2" />
-                    Photo
-                  </Button>
-                </label>
-
-                {/* Video Recording */}
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  className="text-muted-foreground"
-                  onClick={mediaMode === "video" ? (isRecording ? stopRecording : startRecording) : startCamera}
-                  disabled={selectedImages.length > 0 || !!selectedVideo}
-                >
-                  {mediaMode === "video" ? (
-                    isRecording ? (
-                      <>
-                        <Square className="h-4 w-4 mr-2" />
-                        Stop
-                      </>
-                    ) : (
-                      <>
-                        <Camera className="h-4 w-4 mr-2" />
-                        {selectedVideo ? "Record Again" : "Record"}
-                      </>
-                    )
-                  ) : (
-                    <>
-                      <Video className="h-4 w-4 mr-2" />
-                      Video
-                    </>
-                  )}
-                </Button>
-
-                {/* Location */}
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button variant="ghost" size="sm" className="text-muted-foreground">
-                      <MapPin className="h-4 w-4 mr-2" />
-                      Location
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-sm">
-                    <DialogHeader>
-                      <DialogTitle>Add Location</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                      <Input
-                        placeholder="Where are you?"
-                        value={location}
-                        onChange={(e) => setLocation(e.target.value)}
-                      />
-                      <Button onClick={() => {}} className="w-full">
-                        Add Location
-                      </Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-
-                {/* Tags */}
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button variant="ghost" size="sm" className="text-muted-foreground">
-                      <Hash className="h-4 w-4 mr-2" />
-                      Tag
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-sm">
-                    <DialogHeader>
-                      <DialogTitle>Add Tags</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                      <div className="flex space-x-2">
-                        <Input
-                          placeholder="Enter tag"
-                          value={newTag}
-                          onChange={(e) => setNewTag(e.target.value)}
-                          onKeyPress={(e) => e.key === "Enter" && addTag()}
-                        />
-                        <Button onClick={addTag}>
-                          <Plus className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      {tags.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                          {tags.map((tag) => (
-                            <Badge key={tag} variant="secondary">
-                              #{tag}
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-auto w-auto p-0 ml-1"
-                                onClick={() => removeTag(tag)}
-                              >
-                                <X className="h-3 w-3" />
-                              </Button>
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </DialogContent>
-                </Dialog>
-              </div>
-
-              <Button onClick={handleSubmit} disabled={!content.trim() && selectedImages.length === 0 && !selectedVideo}>
-                Post
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </DialogContent>
-    </Dialog>
-  )
-}
+                    <div className="text-white text-sm font-medium mb-2">Background
