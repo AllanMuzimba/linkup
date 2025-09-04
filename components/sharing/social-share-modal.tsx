@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -70,8 +70,15 @@ const socialPlatforms: SocialPlatform[] = [
 
 export function SocialShareModal({ isOpen, onClose, post }: SocialShareModalProps) {
   const [customMessage, setCustomMessage] = useState(post.content)
-  const [shareUrl] = useState(`${window.location.origin}/posts/${post.id}`)
+  const [shareUrl, setShareUrl] = useState("")
   const [copied, setCopied] = useState(false)
+
+  // Set share URL after component mounts to avoid SSR issues
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setShareUrl(`${window.location.origin}/posts/${post.id}`)
+    }
+  }, [post.id])
 
   const handleShare = (platform: SocialPlatform) => {
     // Default invite message

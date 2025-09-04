@@ -347,18 +347,12 @@ export function EnhancedProfilePage() {
 
       // Upload profile picture if changed
       if (profilePictureFile) {
-        profileImageUrl = await FileService.uploadFile(
-          profilePictureFile,
-          `profiles/${user.id}/avatar_${Date.now()}.${profilePictureFile.name.split('.').pop()}`
-        )
+        profileImageUrl = await FileService.uploadAvatar(profilePictureFile)
       }
 
       // Upload cover picture if changed
       if (coverPictureFile) {
-        coverImageUrl = await FileService.uploadFile(
-          coverPictureFile,
-          `profiles/${user.id}/cover_${Date.now()}.${coverPictureFile.name.split('.').pop()}`
-        )
+        coverImageUrl = await FileService.uploadCover(coverPictureFile)
       }
 
       // Prepare location data

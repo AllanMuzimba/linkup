@@ -6,6 +6,11 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { 
   Heart, 
   MessageCircle, 
@@ -21,12 +26,19 @@ import {
   Angry,
   Frown,
   Meh,
-  HeartCrack
+  HeartCrack,
+  Edit,
+  Trash2,
+  Copy,
+  Code,
+  X,
+  Save
 } from "lucide-react"
 import type { Post } from "@/types/post"
 import { SocialShareModal } from "@/components/sharing/social-share-modal"
 import { toast } from "sonner"
 import { PostService } from "@/lib/realtime-services"
+import { useAuth } from "@/contexts/auth-context"
 
 interface Comment {
   id: string
@@ -46,6 +58,8 @@ interface PostCardProps {
   onShare: (postId: string) => void
   onComment: (postId: string, content: string) => void
   onSave: (postId: string) => void
+  onEdit?: (postId: string, newContent: string, newVisibility: string) => void
+  onDelete?: (postId: string) => void
 }
 
 // Emoji reaction types
@@ -67,7 +81,7 @@ export function PostCard({ post, onLike, onShare, onComment, onSave }: PostCardP
   const [userReaction, setUserReaction] = useState<string | null>(null)
   const [comments, setComments] = useState<Comment[]>([])
 
-  // Subscribe to comments
+  // Subscribe to comments - Allow all users to view comments
   useEffect(() => {
     if (showComments) {
       const unsubscribe = PostService.subscribeToPostComments(post.id, (newComments) => {
@@ -125,9 +139,31 @@ export function PostCard({ post, onLike, onShare, onComment, onSave }: PostCardP
 
   const VisibilityIcon = visibilityIcons[post.visibility]
 
-  const formatTimeAgo = (date: Date) => {
+  const formatTimeAgo = (date: Date | any) => {
+    if (!date) return "Unknown time"
+    
+    // Handle Firestore Timestamp objects
+    let dateObj: Date
+    if (date && typeof date.toDate === 'function') {
+      // Firestore Timestamp
+      dateObj = date.toDate()
+    } else if (date instanceof Date) {
+      // Already a Date object
+      dateObj = date
+    } else if (typeof date === 'string' || typeof date === 'number') {
+      // String or number timestamp
+      dateObj = new Date(date)
+    } else {
+      return "Unknown time"
+    }
+
+    // Validate the date
+    if (isNaN(dateObj.getTime())) {
+      return "Unknown time"
+    }
+
     const now = new Date()
-    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000)
+    const diffInSeconds = Math.floor((now.getTime() - dateObj.getTime()) / 1000)
 
     if (diffInSeconds < 60) return "Just now"
     if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`
@@ -204,7 +240,14 @@ export function PostCard({ post, onLike, onShare, onComment, onSave }: PostCardP
             {post.location && (
               <div className="flex items-center space-x-2 text-sm text-muted-foreground">
                 <MapPin className="h-4 w-4" />
-                <span>{post.location}</span>
+                <span>
+                  {typeof post.location === 'string' 
+                    ? post.location 
+                    : post.location._lat && post.location._long
+                    ? `${post.location._lat.toFixed(4)}, ${post.location._long.toFixed(4)}`
+                    : 'Location available'
+                  }
+                </span>
               </div>
             )}
 

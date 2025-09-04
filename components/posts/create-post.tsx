@@ -27,12 +27,15 @@ import {
   Sparkles,
   RotateCcw,
   Smile,
-  Filter
+  Filter,
+  Upload
 } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
 import { toast } from "sonner"
 import type { CreatePostData } from "@/types/post"
 import * as faceapi from 'face-api.js'
+import FileService from "@/lib/FileService"
+import { auth } from "@/lib/firebase" // Import firebase auth
 
 interface CreatePostProps {
   onCreatePost: (postData: CreatePostData) => void
@@ -55,6 +58,10 @@ interface EmojiOverlay {
   size: number
 }
 
+// Photo effect types for static images
+type PhotoEffect = 'none' | 'grayscale' | 'sepia' | 'invert' | 'blur' | 'brightness' | 'contrast'
+
+// Get real-time posts feed
 export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
   const { user } = useAuth()
   const [content, setContent] = useState("")
@@ -63,13 +70,14 @@ export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
   const [tags, setTags] = useState<string[]>([])
   const [newTag, setNewTag] = useState("")
   const [selectedImages, setSelectedImages] = useState<File[]>([])
+  const [imagePreviewUrls, setImagePreviewUrls] = useState<string[]>([])
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null)
   const [isExpanded, setIsExpanded] = useState(false)
   const [mediaMode, setMediaMode] = useState<"image" | "video" | "camera" | "preview" | null>(null)
   const [isRecording, setIsRecording] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showEffects, setShowEffects] = useState(false)
-  const [currentEffect, setCurrentEffect] = useState<VideoEffect>('none')
+  const [currentEffect, setCurrentEffect] = useState<VideoEffect | PhotoEffect>('none')
   const [backgroundMusic, setBackgroundMusic] = useState<File | null>(null)
   const [showMusicOptions, setShowMusicOptions] = useState(false)
   const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([])
@@ -81,7 +89,10 @@ export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [emojiOverlays, setEmojiOverlays] = useState<EmojiOverlay[]>([])
   const [draggingEmojiId, setDraggingEmojiId] = useState<string | null>(null)
-  const [faceApiLoaded, setFaceApiLoaded] = useState(false);
+  const [faceApiLoaded, setFaceApiLoaded] = useState(false)
+  const [capturedImage, setCapturedImage] = useState<string | null>(null)
+  // New state for photo effects on uploaded images
+  const [imagePhotoEffects, setImagePhotoEffects] = useState<Record<string, PhotoEffect>>({})
   
   const videoRef = useRef<HTMLVideoElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
@@ -91,6 +102,8 @@ export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const faceDetectionIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const previewRef = useRef<HTMLVideoElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const imageCanvasRef = useRef<HTMLCanvasElement>(null)
   
   // Initialize face detection models
   useEffect(() => {
@@ -179,6 +192,17 @@ export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
     contrast: 'contrast(200%)'
   }
 
+  // Photo effects for static images
+  const staticPhotoEffects: Record<PhotoEffect, string> = {
+    none: '',
+    grayscale: 'grayscale(100%)',
+    sepia: 'sepia(100%)',
+    invert: 'invert(100%)',
+    blur: 'blur(5px)',
+    brightness: 'brightness(150%)',
+    contrast: 'contrast(200%)'
+  }
+
   // Face filters
   const faceFilters: Record<FaceFilter, string> = {
     none: 'No Filter',
@@ -204,6 +228,100 @@ export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
     objects: ["🔥", "⭐", "🌟", "✨", "💫", "⚡", "💥", "💯", "🎉", "🎊", "🎈", "🎁", "🏆", "🥇", "🥈", "🥉"],
     animals: ["🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐨", "🐯", "🦁", "🐮", "🐷", "🐸", "🐵"]
   }
+
+  // Handle image upload
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const newImages: File[] = [];
+    const newPreviewUrls: string[] = [];
+    const newPhotoEffects: Record<string, PhotoEffect> = { ...imagePhotoEffects };
+
+    Array.from(files).forEach((file) => {
+      if (file.type.startsWith('image/')) {
+        newImages.push(file);
+        const url = URL.createObjectURL(file);
+        newPreviewUrls.push(url);
+        // Initialize photo effect for this image
+        newPhotoEffects[url] = 'none';
+      }
+    });
+
+    setSelectedImages(prev => [...prev, ...newImages]);
+    setImagePreviewUrls(prev => [...prev, ...newPreviewUrls]);
+    setImagePhotoEffects(newPhotoEffects);
+    setMediaMode('image');
+  };
+
+  // Remove uploaded image
+  const removeImage = (index: number) => {
+    const newImages = [...selectedImages];
+    const newPreviewUrls = [...imagePreviewUrls];
+    const removedUrl = newPreviewUrls.splice(index, 1)[0];
+    newImages.splice(index, 1);
+    
+    // Clean up object URL
+    URL.revokeObjectURL(removedUrl);
+    
+    // Remove photo effect for this image
+    const newPhotoEffects = { ...imagePhotoEffects };
+    delete newPhotoEffects[removedUrl];
+    setImagePhotoEffects(newPhotoEffects);
+    
+    setSelectedImages(newImages);
+    setImagePreviewUrls(newPreviewUrls);
+    
+    // If no images left, reset media mode
+    if (newPreviewUrls.length === 0) {
+      setMediaMode(null);
+    }
+  };
+
+  // Apply photo effect to an image
+  const applyPhotoEffect = (imageUrl: string, effect: PhotoEffect) => {
+    setImagePhotoEffects(prev => ({
+      ...prev,
+      [imageUrl]: effect
+    }));
+  };
+
+  // Capture photo from camera
+  const capturePhoto = () => {
+    if (!videoRef.current) return;
+    
+    const canvas = document.createElement('canvas');
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    // Apply current effect to captured image
+    ctx.filter = videoEffects[currentEffect as VideoEffect];
+    ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+    
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      
+      const file = new File([blob], `photo-${Date.now()}.png`, { type: 'image/png' });
+      const url = URL.createObjectURL(blob);
+      
+      setSelectedImages(prev => [...prev, file]);
+      setImagePreviewUrls(prev => [...prev, url]);
+      setCapturedImage(url);
+      setMediaMode('image');
+      
+      // Initialize photo effect for captured image
+      setImagePhotoEffects(prev => ({
+        ...prev,
+        [url]: currentEffect as PhotoEffect
+      }));
+      
+      // Stop camera after capture
+      stopCamera();
+    }, 'image/png');
+  };
 
   // Video recording functions
   const startCamera = async (deviceId?: string) => {
@@ -316,10 +434,10 @@ export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
     }
   };
 
-  const applyEffect = (effect: VideoEffect) => {
+  const applyEffect = (effect: VideoEffect | PhotoEffect) => {
     setCurrentEffect(effect);
     if (videoRef.current) {
-      videoRef.current.style.filter = videoEffects[effect];
+      videoRef.current.style.filter = videoEffects[effect as VideoEffect];
     }
   };
 
@@ -351,7 +469,13 @@ export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
   };
 
   const handleCreatePost = async () => {
-    if (!content.trim() && !selectedVideo) {
+    const currentUser = auth?.currentUser;
+    if (!user || !currentUser) {
+      toast.error("Please log in to create posts");
+      return;
+    }
+
+    if (!content.trim() && selectedImages.length === 0 && !selectedVideo) {
       toast.error("Please add some content or media to your post");
       return;
     }
@@ -359,13 +483,17 @@ export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
     setIsSubmitting(true);
     
     try {
+      const idToken = await currentUser.getIdToken();
+
       // Prepare post data
       const postData: CreatePostData = {
         content: content.trim(),
         visibility,
         location: location || undefined,
         tags: tags.length > 0 ? tags : undefined,
-        video: selectedVideo ? new File([], "recorded-video.webm", { type: 'video/webm' }) : undefined
+        images: selectedImages.length > 0 ? selectedImages : undefined,
+        video: selectedVideo ? new File([], "recorded-video.webm", { type: 'video/webm' }) : undefined,
+        idToken: idToken, // Pass the idToken
       };
       
       await onCreatePost(postData);
@@ -373,9 +501,12 @@ export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
       // Reset form
       setContent("");
       setTags([]);
+      setSelectedImages([]);
       setSelectedVideo(null);
       setMediaMode(null);
       setEmojiOverlays([]);
+      setImagePhotoEffects({});
+      setCapturedImage(null);
       
       toast.success("Post created successfully!");
       onClose();
@@ -405,8 +536,10 @@ export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
       if (selectedVideo) {
         URL.revokeObjectURL(selectedVideo);
       }
+      // Clean up image preview URLs
+      imagePreviewUrls.forEach(url => URL.revokeObjectURL(url));
     };
-  }, [selectedVideo]);
+  }, [selectedVideo, imagePreviewUrls]);
 
   if (!isOpen) return null;
 
@@ -468,6 +601,65 @@ export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
               </div>
             )}
 
+            {/* Image Mode - Display uploaded images */}
+            {mediaMode === 'image' && imagePreviewUrls.length > 0 && (
+              <div className="relative w-full h-full flex flex-col">
+                <div className="flex-1 relative overflow-hidden">
+                  {imagePreviewUrls.map((url, index) => (
+                    <div 
+                      key={index} 
+                      className="absolute inset-0 flex items-center justify-center"
+                      style={{ display: index === imagePreviewUrls.length - 1 ? 'flex' : 'none' }}
+                    >
+                      <img
+                        src={url}
+                        alt={`Preview ${index + 1}`}
+                        className="max-h-full max-w-full object-contain"
+                        style={{ filter: imagePhotoEffects[url] ? staticPhotoEffects[imagePhotoEffects[url]] : '' }}
+                      />
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        className="absolute top-2 right-2 h-8 w-8 p-0 bg-black/50 hover:bg-black/70"
+                        onClick={() => removeImage(index)}
+                      >
+                        <X className="h-4 w-4 text-white" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                
+                {/* Image navigation dots */}
+                {imagePreviewUrls.length > 1 && (
+                  <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex space-x-2">
+                    {imagePreviewUrls.map((_, index) => (
+                      <div
+                        key={index}
+                        className={`w-2 h-2 rounded-full ${
+                          index === imagePreviewUrls.length - 1 ? 'bg-white' : 'bg-white/50'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                )}
+                
+                {/* Image effects panel */}
+                <div className="absolute top-2 left-2 bg-black/70 rounded-lg p-2 flex space-x-2">
+                  {Object.entries(staticPhotoEffects).map(([effect, _]) => (
+                    <Button
+                      key={effect}
+                      size="sm"
+                      variant={imagePhotoEffects[imagePreviewUrls[imagePreviewUrls.length - 1]] === effect ? "default" : "secondary"}
+                      className="h-8 text-xs"
+                      onClick={() => applyPhotoEffect(imagePreviewUrls[imagePreviewUrls.length - 1], effect as PhotoEffect)}
+                    >
+                      {effect.charAt(0).toUpperCase() + effect.slice(1)}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Camera Mode */}
             {mediaMode === 'camera' && (
               <div className="relative w-full h-full">
@@ -477,7 +669,7 @@ export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
                   muted
                   playsInline
                   className="w-full h-full object-cover rounded-lg"
-                  style={{ filter: videoEffects[currentEffect] }}
+                  style={{ filter: videoEffects[currentEffect as VideoEffect] }}
                 />
                 
                 {/* Recording Indicator */}
@@ -501,6 +693,16 @@ export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
                     ) : (
                       <div className="w-6 h-6 bg-red-500 rounded-full"></div>
                     )}
+                  </Button>
+                  
+                  {/* Capture Photo Button */}
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="h-12 w-12 rounded-full bg-black/50 hover:bg-black/70"
+                    onClick={capturePhoto}
+                  >
+                    <Camera className="h-6 w-6 text-white" />
                   </Button>
                   
                   <Button
@@ -718,20 +920,19 @@ export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
           {/* Post Actions */}
           <div className="flex items-center justify-between pt-4">
             <div className="flex space-x-2">
+              {/* Image Upload Button */}
               <Button
                 variant="ghost"
                 size="sm"
                 className="h-8 px-2"
                 onClick={() => {
-                  if (!mediaMode) {
-                    setMediaMode('image');
-                    // In a real implementation, this would open image selection
-                    toast.info("Image selection would be implemented here");
+                  if (fileInputRef.current) {
+                    fileInputRef.current.click();
                   }
                 }}
               >
-                <ImageIcon className="h-4 w-4" />
-                <span className="sr-only">Add image</span>
+                <Upload className="h-4 w-4" />
+                <span className="sr-only">Upload image</span>
               </Button>
               
               <Button
@@ -788,6 +989,16 @@ export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
                 <Hash className="h-4 w-4" />
                 <span className="sr-only">Add hashtag</span>
               </Button>
+              
+              {/* Hidden file input for image upload */}
+              <input
+                type="file"
+                ref={fileInputRef}
+                className="hidden"
+                accept="image/*"
+                multiple
+                onChange={handleImageUpload}
+              />
             </div>
             
             <div className="flex items-center space-x-2">
@@ -828,7 +1039,7 @@ export function CreatePost({ onCreatePost, isOpen, onClose }: CreatePostProps) {
               <Button 
                 size="sm" 
                 onClick={handleCreatePost}
-                disabled={isSubmitting || (!content.trim() && !selectedVideo)}
+                disabled={isSubmitting || (!content.trim() && selectedImages.length === 0 && !selectedVideo)}
                 className="h-8"
               >
                 {isSubmitting ? 'Posting...' : 'Post'}

@@ -84,9 +84,34 @@ export function SavedPosts() {
     }
   }
 
-  const formatTimeAgo = (date: Date) => {
+  const formatTimeAgo = (date: Date | any) => {
+    if (!date) return "Unknown time"
+    
+    // Handle Firestore Timestamp objects
+    let dateObj: Date
+    if (date && typeof date.toDate === 'function') {
+      // Firestore Timestamp
+      dateObj = date.toDate()
+    } else if (date instanceof Date) {
+      // Already a Date object
+      dateObj = date
+    } else if (typeof date === 'string' || typeof date === 'number') {
+      // String or number timestamp
+      dateObj = new Date(date)
+    } else if (date?._seconds) {
+      // Firestore Timestamp alternative format
+      dateObj = new Date(date._seconds * 1000)
+    } else {
+      return "Unknown time"
+    }
+
+    // Validate the date
+    if (isNaN(dateObj.getTime())) {
+      return "Unknown time"
+    }
+
     const now = new Date()
-    const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60))
+    const diffInMinutes = Math.floor((now.getTime() - dateObj.getTime()) / (1000 * 60))
 
     if (diffInMinutes < 1) return "Just now"
     if (diffInMinutes < 60) return `${diffInMinutes}m ago`

@@ -329,7 +329,15 @@ export class UserService {
 // Real-time Posts Management
 export class PostService {
   // Create a new post
-  static async createPost(authorId: string, content: string, type: 'text' | 'image' | 'video', mediaUrls?: string[], location?: GeoPoint) {
+  static async createPost(
+    authorId: string, 
+    content: string, 
+    type: 'text' | 'image' | 'video', 
+    mediaUrls?: string[],
+    visibility?: "public" | "friends" | "private",
+    tags?: string[],
+    location?: string
+  ) {
     if (!db || !isAuthenticated()) return null
     
     const postData = {
@@ -337,13 +345,14 @@ export class PostService {
       content,
       type,
       mediaUrls: mediaUrls || [],
+      visibility: visibility || 'public',
+      tags: tags || [],
       location: location || null,
       likesCount: 0,
       commentsCount: 0,
       sharesCount: 0,
       createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      visibility: 'public'
+      updatedAt: serverTimestamp()
     }
     
     const docRef = await addDoc(collection(db, 'posts'), postData)
@@ -357,9 +366,9 @@ export class PostService {
     return docRef.id
   }
 
-  // Add a comment to a post
+  // Add a comment to a post - Allow all users to comment (like Facebook)
   static async addComment(postId: string, userId: string, content: string) {
-    if (!db || !isAuthenticated()) return null
+    if (!db) return null
     
     // Get user info
     const userRef = doc(db, 'users', userId)
@@ -372,9 +381,9 @@ export class PostService {
       postId,
       authorId: userId,
       author: {
-        name: userData.name,
-        username: userData.username,
-        avatar: userData.avatar
+        name: userData.name || 'Anonymous',
+        username: userData.username || 'user',
+        avatar: userData.avatar || null
       },
       content,
       likesCount: 0,
@@ -389,18 +398,6 @@ export class PostService {
     await updateDoc(postRef, {
       commentsCount: increment(1)
     })
-    
-    // Create notification for post author (if not the same user)
-    const postSnap = await getDoc(postRef)
-    if (postSnap.exists() && postSnap.data().authorId !== userId) {
-      await NotificationService.createPostNotification(
-        postSnap.data().authorId,
-        'comment',
-        userId,
-        postId,
-        { commentId: docRef.id }
-      )
-    }
     
     return docRef.id
   }
@@ -545,15 +542,15 @@ export class PostService {
       if (options?.friendsOnly && options?.authorId) {
         // This would require a friends list lookup
         // For now, we'll filter by authorId as an example
-        posts = posts.filter(post => post && post.authorId === options.authorId)
+        posts = posts.filter((post: any) => post && post.authorId === options.authorId)
       } else if (options?.authorId) {
         // Only filter by authorId if specifically requested
-        posts = posts.filter(post => post && post.authorId === options.authorId)
+        posts = posts.filter((post: any) => post && post.authorId === options.authorId)
       }
       
       // Filter by location if specified
       if (options?.location && options.location.radius) {
-        posts = posts.filter(post => {
+        posts = posts.filter((post: any) => {
           const p = post as any
           return !p.distance || p.distance <= (options.location?.radius || 50)
         })
@@ -631,7 +628,8 @@ export class PostService {
       
       // Combine posts with author data
       for (const post of postsData) {
-        const authorId = post.authorId
+        const postData: any = post;
+        const authorId = postData.authorId
         const author = authorsMap[authorId] || {
           name: 'Unknown User',
           username: authorId ? authorId.substring(0, 8) : 'unknown',
@@ -639,10 +637,10 @@ export class PostService {
         }
         
         posts.push({
-          ...post,
+          ...postData,
           author,
-          createdAt: post.createdAt?.toDate(),
-          updatedAt: post.updatedAt?.toDate()
+          createdAt: postData.createdAt?.toDate(),
+          updatedAt: postData.updatedAt?.toDate()
         })
       }
       
@@ -720,8 +718,9 @@ export class PostService {
       )
       
       // Combine posts with author data
-      const posts = postsData.map(post => {
-        const authorId = post.authorId
+      const posts = postsData.map((post: any) => {
+        const postData: any = post;
+        const authorId = postData.authorId
         const author = authorsMap[authorId] || {
           name: 'Unknown User',
           username: authorId ? authorId.substring(0, 8) : 'unknown',
@@ -729,10 +728,10 @@ export class PostService {
         }
         
         return {
-          ...post,
+          ...postData,
           author,
-          createdAt: post.createdAt?.toDate(),
-          updatedAt: post.updatedAt?.toDate()
+          createdAt: postData.createdAt?.toDate(),
+          updatedAt: postData.updatedAt?.toDate()
         }
       })
       
@@ -742,11 +741,11 @@ export class PostService {
 
   // Like/Unlike a post
   static async togglePostLike(postId: string, userId: string) {
-    if (!db || !isAuthenticated()) return
+    if (!db || !isAuthenticated()) return false
     
     const likeRef = doc(db, 'likes', `${userId}_${postId}`)
     const likeSnap = await getDoc(likeRef)
-    if (!db) return;
+    if (!db) return false;
     const postRef = doc(db, 'posts', postId)
     
     if (likeSnap.exists()) {
@@ -758,7 +757,7 @@ export class PostService {
       return false
     } else {
       // Like
-      await addDoc(collection(db, 'likes'), {
+      await setDoc(likeRef, {
         userId,
         postId,
         createdAt: serverTimestamp()
@@ -783,10 +782,21 @@ export class PostService {
 
   // Share a post
   static async sharePost(postId: string, userId: string, shareData?: any) {
-    if (!db || !isAuthenticated()) return
+    if (!db || !isAuthenticated()) return false
     
-    if (!db) return;
+    if (!db) return false;
     const postRef = doc(db, 'posts', postId)
+    
+    // Record the share
+    const shareRef = doc(collection(db, 'shares'))
+    await setDoc(shareRef, {
+      userId,
+      postId,
+      shareData: shareData || {},
+      createdAt: serverTimestamp()
+    })
+    
+    // Update post's share count
     await updateDoc(postRef, {
       sharesCount: increment(1)
     })
@@ -1559,27 +1569,100 @@ export class NotificationService {
   }
 }
 
-// File Upload Service
+// File Upload Service - Now using Cloudinary via API
 export class FileService {
-  static async uploadFile(file: File, path: string): Promise<string> {
-    if (!storage || !isAuthenticated()) throw new Error('Storage not initialized')
+  static async uploadFile(file: File, uploadType: string = 'post', targetId?: string): Promise<string> {
+    if (!isAuthenticated()) throw new Error('User not authenticated')
     
-    const storageRef = ref(storage, path)
-    const snapshot = await uploadBytes(storageRef, file)
-    return await getDownloadURL(snapshot.ref)
+    const user = auth.currentUser
+    if (!user) throw new Error('User not authenticated')
+
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('type', uploadType)
+    if (targetId) {
+      formData.append('targetId', targetId)
+    }
+
+    const token = await user.getIdToken()
+    
+    const response = await fetch('/api/upload', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      },
+      body: formData
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error || 'Upload failed')
+    }
+
+    const result = await response.json()
+    return result.url
   }
 
   static async uploadPostMedia(files: File[], userId: string): Promise<string[]> {
-    if (!storage || !isAuthenticated()) return []
+    if (!isAuthenticated()) return []
     
-    const uploadPromises = files.map((file, index) => {
-      const path = `posts/${userId}/${Date.now()}_${index}_${file.name}`
-      return this.uploadFile(file, path)
+    const uploadPromises = files.map((file) => {
+      return this.uploadFile(file, 'post', userId)
     })
     
     return await Promise.all(uploadPromises)
   }
+
+  static async uploadAvatar(file: File): Promise<string> {
+    return this.uploadFile(file, 'avatar')
+  }
+
+  static async uploadCover(file: File): Promise<string> {
+    return this.uploadFile(file, 'cover')
+  }
+
+  static async uploadChatMedia(file: File, chatId: string): Promise<string> {
+    return this.uploadFile(file, 'chat', chatId)
+  }
+
+  static async uploadStoryMedia(file: File, storyId: string): Promise<string> {
+    return this.uploadFile(file, 'story', storyId)
+  }
+
+  static async deleteFile(publicId: string, resourceType: 'image' | 'video' | 'raw' = 'image'): Promise<boolean> {
+    if (!isAuthenticated()) throw new Error('User not authenticated')
+    
+    const user = auth.currentUser
+    if (!user) throw new Error('User not authenticated')
+
+    const token = await user.getIdToken()
+    
+    const response = await fetch(`/api/upload/delete?publicId=${encodeURIComponent(publicId)}&resourceType=${resourceType}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error || 'Delete failed')
+    }
+
+    const result = await response.json()
+    return result.success
+  }
 }
+
+
+
+
+
+
+
+
+
+
 
 
 

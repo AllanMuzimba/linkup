@@ -6,17 +6,34 @@ import { CreatePost } from "@/components/posts/create-post"
 import { PostsFeed } from "@/components/posts/posts-feed"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { Button } from "@/components/ui/button"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Plus, Filter, MapPin, Users, Eye, EyeOff } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
 import { UserService, PostService } from "@/lib/realtime-services"
+import FileService from "@/lib/FileService"
 import { toast } from "sonner"
+import { auth } from "@/lib/firebase"
+
+// Define types for better type safety
+interface Location {
+  lat: number;
+  lng: number;
+}
+
+interface PostData {
+  content: string;
+  images?: File[];
+  video?: File;
+  visibility: "public" | "friends" | "private";
+  tags?: string[];
+  location?: string;
+}
+
+type FeedFilter = "all" | "friends" | "nearby" | "mine" | "none";
 
 export default function PostsPage() {
   const { user } = useAuth()
-  const [userLocation, setUserLocation] = useState<{ lat: number, lng: number } | null>(null)
-  const [feedFilter, setFeedFilter] = useState<'all' | 'friends' | 'nearby' | 'mine' | 'none'>('all')
+  const [userLocation, setUserLocation] = useState<Location | null>(null)
+  const [feedFilter, setFeedFilter] = useState<FeedFilter>("all")
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [isPageLoading, setIsPageLoading] = useState(true)
 
@@ -24,19 +41,21 @@ export default function PostsPage() {
   useEffect(() => {
     const initializePage = async () => {
       setIsPageLoading(true)
-      
+
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (position) => {
-            const location = {
+            const location: Location = {
               lat: position.coords.latitude,
-              lng: position.coords.longitude
+              lng: position.coords.longitude,
             }
             setUserLocation(location)
-            
+
             // Update user location in database
-            if (user) {
-              UserService.updateUserLocation(user.id, location)
+            if (user?.id) {
+              UserService.updateUserLocation(user.id, location).catch((error) => {
+                console.error("Failed to update user location:", error)
+              })
             }
           },
           (error) => {
@@ -44,41 +63,38 @@ export default function PostsPage() {
           }
         )
       }
-      
+
       // Simulate page loading
       setTimeout(() => {
         setIsPageLoading(false)
       }, 800)
     }
-    
+
     initializePage()
   }, [user])
 
-  const handleCreatePost = async (postData: any) => {
-    if (!user) {
+  const handleCreatePost = async (postData: PostData) => {
+    if (!user?.id || !auth || !auth.currentUser) {
       toast.error("Please log in to create posts")
       return
     }
 
     try {
+      const idToken = await auth.currentUser.getIdToken()
+
       // Determine post type and upload media
       let mediaUrls: string[] = []
-      let postType: 'text' | 'image' | 'video' = 'text'
-      
+      let postType: "text" | "image" | "video" = "text"
+
       if (postData.images && postData.images.length > 0) {
-        // Upload images
-        postType = 'image'
-        // In a real app, you would upload the images to storage
-        // For now, we'll just use placeholder URLs
-        mediaUrls = postData.images.map((_: any, index: number) => 
-          `https://picsum.photos/seed/${Date.now()}-${index}/800/600`
-        )
+        // Upload images to Cloudinary
+        postType = "image"
+        mediaUrls = await FileService.uploadPostMedia(postData.images, user.id, idToken)
       } else if (postData.video) {
         // Upload video
-        postType = 'video'
-        // In a real app, you would upload the video to storage
-        // For now, we'll use a placeholder
-        mediaUrls = [`https://sample-videos.com/zip/10/mp4/Sample-video-10mb.mp4`]
+        postType = "video"
+        const videoUrl = await FileService.uploadFile(postData.video, "post", user.id, idToken)
+        mediaUrls = [videoUrl]
       }
 
       // Create the post
@@ -86,12 +102,14 @@ export default function PostsPage() {
         user.id,
         postData.content,
         postType,
-        mediaUrls
+        mediaUrls,
+        postData.visibility,
+        postData.tags || [],
+        postData.location ? JSON.stringify(postData.location) : undefined
       )
 
       if (postId) {
         toast.success("Post created successfully! 🎉")
-        // Close the dialog
         setIsCreateDialogOpen(false)
       } else {
         toast.error("Failed to create post")
@@ -100,6 +118,18 @@ export default function PostsPage() {
       toast.error("Failed to create post")
       console.error("Error creating post:", error)
     }
+  }
+
+  const handleCreatePostClick = () => {
+    if (!user) {
+      toast.error("Please log in to create posts")
+      return
+    }
+    setIsCreateDialogOpen(true)
+  }
+
+  const handleFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setFeedFilter(e.target.value as FeedFilter)
   }
 
   if (isPageLoading) {
@@ -115,18 +145,18 @@ export default function PostsPage() {
           </div>
         </main>
       </div>
-    )
+    );
   }
 
   const getFilteredFeedProps = () => {
     switch (feedFilter) {
-      case 'friends':
-        return user ? { friendsOnly: true, authorId: user.id } : {}
-      case 'nearby':
-        return { location: userLocation ? { ...userLocation, radius: 50 } : undefined }
-      case 'mine':
-        return user ? { authorId: user.id } : {}
-      case 'none':
+      case "friends":
+        return user?.id ? { friendsOnly: true, authorId: user.id } : {}
+      case "nearby":
+        return userLocation ? { location: { ...userLocation, radius: 50 } } : {}
+      case "mine":
+        return user?.id ? { authorId: user.id } : {}
+      case "none":
         return { showNone: true }
       default:
         return {}
@@ -135,22 +165,33 @@ export default function PostsPage() {
 
   const getFilterLabel = () => {
     switch (feedFilter) {
-      case 'all': return 'All Posts'
-      case 'friends': return 'Friends Only'
-      case 'nearby': return 'Nearby Posts'
-      case 'mine': return 'My Posts'
-      case 'none': return 'No Posts'
-      default: return 'All Posts'
+      case "all":
+        return "All Posts"
+      case "friends":
+        return "Friends Only"
+      case "nearby":
+        return "Nearby Posts"
+      case "mine":
+        return "My Posts"
+      case "none":
+        return "No Posts"
+      default:
+        return "All Posts"
     }
   }
 
   const getFilterIcon = () => {
     switch (feedFilter) {
-      case 'friends': return <Users className="h-4 w-4" />
-      case 'nearby': return <MapPin className="h-4 w-4" />
-      case 'mine': return <Eye className="h-4 w-4" />
-      case 'none': return <EyeOff className="h-4 w-4" />
-      default: return <Filter className="h-4 w-4" />
+      case "friends":
+        return <Users className="h-4 w-4" />
+      case "nearby":
+        return <MapPin className="h-4 w-4" />
+      case "mine":
+        return <Eye className="h-4 w-4" />
+      case "none":
+        return <EyeOff className="h-4 w-4" />
+      default:
+        return <Filter className="h-4 w-4" />
     }
   }
 
@@ -169,26 +210,17 @@ export default function PostsPage() {
                   Location enabled
                 </div>
               )}
-              
+
               {/* Create Post Button */}
-              {user ? (
-                <>
-                  <CreatePost 
-                    isOpen={isCreateDialogOpen}
-                    onClose={() => setIsCreateDialogOpen(false)}
-                    onCreatePost={handleCreatePost}
-                  />
-                  <Button onClick={() => setIsCreateDialogOpen(true)}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Post Story
-                  </Button>
-                </>
-              ) : (
-                <Button onClick={() => toast.error("Please log in to create posts")}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Post Story
-                </Button>
-              )}
+              <CreatePost
+                isOpen={isCreateDialogOpen}
+                onClose={() => setIsCreateDialogOpen(false)}
+                onCreatePost={handleCreatePost}
+              />
+              <Button onClick={handleCreatePostClick}>
+                <Plus className="h-4 w-4 mr-2" />
+                Post Story
+              </Button>
             </div>
           </div>
 
@@ -198,48 +230,26 @@ export default function PostsPage() {
               {getFilterIcon()}
               <span className="font-medium">{getFilterLabel()}</span>
             </div>
-            
-            <Select value={feedFilter} onValueChange={(value: any) => setFeedFilter(value)}>
-              <SelectTrigger className="w-48">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">
-                  <div className="flex items-center">
-                    <Filter className="h-4 w-4 mr-2" />
-                    All Posts
-                  </div>
-                </SelectItem>
-                <SelectItem value="friends" disabled={!user}>
-                  <div className="flex items-center">
-                    <Users className="h-4 w-4 mr-2" />
-                    Friends Only
-                  </div>
-                </SelectItem>
-                <SelectItem value="nearby">
-                  <div className="flex items-center">
-                    <MapPin className="h-4 w-4 mr-2" />
-                    Nearby Posts
-                  </div>
-                </SelectItem>
-                <SelectItem value="mine" disabled={!user}>
-                  <div className="flex items-center">
-                    <Eye className="h-4 w-4 mr-2" />
-                    My Posts Only
-                  </div>
-                </SelectItem>
-                <SelectItem value="none">
-                  <div className="flex items-center">
-                    <EyeOff className="h-4 w-4 mr-2" />
-                    Hide All Posts
-                  </div>
-                </SelectItem>
-              </SelectContent>
-            </Select>
+
+            <select
+              value={feedFilter}
+              onChange={handleFilterChange}
+              className="w-48 p-2 rounded bg-background border"
+            >
+              <option value="all">All Posts</option>
+              <option value="friends" disabled={!user}>
+                Friends Only
+              </option>
+              <option value="nearby">Nearby Posts</option>
+              <option value="mine" disabled={!user}>
+                My Posts Only
+              </option>
+              <option value="none">Hide All Posts</option>
+            </select>
           </div>
-          
+
           {/* Posts Feed */}
-          {feedFilter === 'none' ? (
+          {feedFilter === "none" ? (
             <div className="text-center py-12">
               <EyeOff className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <h3 className="text-lg font-medium mb-2">Posts Hidden</h3>

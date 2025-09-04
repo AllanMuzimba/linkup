@@ -30,7 +30,7 @@ import {
 } from "lucide-react"
 import { doc, updateDoc } from "firebase/firestore"
 import { updateProfile, updateEmail, updatePassword } from "firebase/auth"
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage"
+import { FileService } from "@/lib/realtime-services"
 import { db, auth, storage } from "@/lib/firebase"
 
 export function UserProfile() {
@@ -86,10 +86,8 @@ export function UserProfile() {
     setError("")
 
     try {
-      // Upload to Firebase Storage
-      const storageRef = ref(storage, `users/${user.id}/avatar_${Date.now()}`)
-      const snapshot = await uploadBytes(storageRef, file)
-      const downloadURL = await getDownloadURL(snapshot.ref)
+      // Upload to Cloudinary via API
+      const downloadURL = await FileService.uploadAvatar(file)
 
       // Update user profile
       if (auth.currentUser) {

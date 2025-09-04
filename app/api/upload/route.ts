@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { adminAuth, adminStorage } from '@/lib/firebase-admin'
+import { adminAuth } from '@/lib/firebase-admin'
 import { v4 as uuidv4 } from 'uuid'
+import { uploadToCloudinary, getTransformationOptions } from '@/lib/cloudinary-utils'
 
 const MAX_FILE_SIZE = {
   image: 5 * 1024 * 1024,      // 5MB
@@ -18,7 +19,7 @@ const ALLOWED_TYPES = {
 
 export async function POST(request: NextRequest) {
   try {
-    if (!adminAuth || !adminStorage) {
+    if (!adminAuth) {
       return NextResponse.json({ error: 'Firebase Admin not configured' }, { status: 500 })
     }
 
@@ -58,67 +59,83 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // Generate file path
-    const fileExtension = file.name.split('.').pop()
-    const fileName = `${uuidv4()}.${fileExtension}`
-    let filePath: string
+    // Generate unique public ID for Cloudinary
+    const uniqueId = uuidv4()
+    let folder: string
+    let publicId: string
 
     switch (uploadType) {
       case 'avatar':
-        filePath = `users/${userId}/avatar_${fileName}`
+        folder = 'linkup/users/avatars'
+        publicId = `${userId}_${uniqueId}`
         break
       case 'cover':
-        filePath = `users/${userId}/cover_${fileName}`
+        folder = 'linkup/users/covers'
+        publicId = `${userId}_${uniqueId}`
         break
       case 'post':
-        filePath = `posts/${targetId}/${fileName}`
+        folder = 'linkup/posts'
+        publicId = `${targetId || userId}_${uniqueId}`
         break
       case 'story':
-        filePath = `stories/${targetId}/${fileName}`
+        folder = 'linkup/stories'
+        publicId = `${targetId || userId}_${uniqueId}`
         break
       case 'chat':
-        filePath = `chats/${targetId}/attachments/${fileName}`
+        folder = 'linkup/chats'
+        publicId = `${targetId}_${uniqueId}`
         break
       case 'voice':
-        filePath = `voice-messages/${targetId}/${fileName}`
+        folder = 'linkup/voice'
+        publicId = `${targetId}_${uniqueId}`
         break
       default:
-        filePath = `temp/${userId}/${fileName}`
+        folder = 'linkup/temp'
+        publicId = `${userId}_${uniqueId}`
     }
 
-    // Upload file to Firebase Storage
-    const bucket = adminStorage.bucket()
+    // Convert file to buffer for upload
     const fileBuffer = Buffer.from(await file.arrayBuffer())
-    const fileRef = bucket.file(filePath)
 
-    await fileRef.save(fileBuffer, {
-      metadata: {
-        contentType: file.type,
-        metadata: {
-          uploadedBy: userId,
-          originalName: file.name,
-          uploadType
-        }
-      }
+    // Determine resource type for Cloudinary
+    let resourceType: 'image' | 'video' | 'raw'
+    if (fileType === 'image') resourceType = 'image'
+    else if (fileType === 'video') resourceType = 'video'
+    else resourceType = 'raw'
+
+    // Get optimized transformations
+    const transformations = getTransformationOptions(fileType, uploadType)
+
+    // Upload to Cloudinary using utility function
+    const uploadResult = await uploadToCloudinary(fileBuffer, file.type, {
+      folder,
+      publicId,
+      resourceType,
+      transformation: transformations,
+      context: {
+        uploadedBy: userId,
+        originalName: file.name,
+        uploadType: uploadType
+      },
+      tags: [uploadType, userId, 'linkup']
     })
 
-    // Make file publicly readable if it's a profile image
-    if (uploadType === 'avatar' || uploadType === 'cover') {
-      await fileRef.makePublic()
+    if (!uploadResult.success) {
+      return NextResponse.json({ 
+        error: uploadResult.error || 'Upload failed' 
+      }, { status: 500 })
     }
-
-    // Get download URL
-    const [downloadURL] = await fileRef.getSignedUrl({
-      action: 'read',
-      expires: '03-01-2500' // Far future date for permanent access
-    })
 
     return NextResponse.json({
       success: true,
-      url: downloadURL,
-      fileName,
+      url: uploadResult.url,
+      publicId: uploadResult.publicId,
+      fileName: file.name,
       fileType,
-      size: file.size
+      size: file.size,
+      width: uploadResult.width,
+      height: uploadResult.height,
+      format: uploadResult.format
     })
 
   } catch (error) {

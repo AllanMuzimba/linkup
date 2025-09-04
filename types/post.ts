@@ -20,7 +20,7 @@ export interface Post {
   isSaved: boolean
   visibility: "public" | "friends" | "private"
   tags?: string[]
-  location?: string
+  location?: string | { _lat: number; _long: number } | any
 }
 
 export interface Comment {
@@ -67,7 +67,8 @@ export interface CreatePostData {
   video?: File
   visibility: "public" | "friends" | "private"
   tags?: string[]
-  location?: string
+  location?: string | { _lat: number; _long: number } | any
+  idToken?: string // Add idToken to the interface
 }
 
 export interface CreateStoryData {

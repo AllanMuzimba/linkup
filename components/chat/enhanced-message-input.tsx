@@ -77,9 +77,9 @@ export function EnhancedMessageInput({
       // Upload media files if any
       if (mediaFiles.length > 0) {
         const uploadPromises = mediaFiles.map(async (mediaFile) => {
-          const url = await FileService.uploadFile(
+          const url = await FileService.uploadChatMedia(
             mediaFile.file, 
-            `messages/${Date.now()}_${mediaFile.name}`
+            currentChatId || 'general'
           )
           return { ...mediaFile, preview: url }
         })
@@ -91,7 +91,7 @@ export function EnhancedMessageInput({
         const audioFile = new File([audioBlob], `voice_${Date.now()}.webm`, {
           type: 'audio/webm'
         })
-        const audioUrl = await FileService.uploadFile(audioFile, `messages/voice_${Date.now()}.webm`)
+        const audioUrl = await FileService.uploadFile(audioFile, 'voice', currentChatId || 'general')
         uploadedFiles.push({
           id: `audio_${Date.now()}`,
           file: audioFile,
